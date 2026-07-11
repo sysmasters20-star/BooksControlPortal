@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import { query } from '../database/connection.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { encrypt } from '../utils/encryption.js';
 
 export async function list(req: Request, res: Response) {
   const { bookshop_id, status } = req.query;
@@ -67,6 +69,29 @@ export async function updateStatus(req: Request, res: Response) {
   if (result.rows.length === 0) {
     throw new AppError(404, 'Book not found');
   }
+
+  res.json({ book: result.rows[0] });
+}
+
+export async function uploadFile(req: Request, res: Response) {
+  const { id } = req.params;
+  if (!req.file) {
+    throw new AppError(400, 'PDF file required');
+  }
+
+  const book = await query('SELECT id FROM books WHERE id = $1', [id]);
+  if (book.rows.length === 0) {
+    throw new AppError(404, 'Book not found');
+  }
+
+  const fileHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+  const { iv, data: encrypted } = encrypt(req.file.buffer);
+
+  const result = await query(
+    `UPDATE books SET file_data = $1, file_size = $2, file_hash = $3, encryption_iv = $4, updated_at = NOW()
+     WHERE id = $5 RETURNING id, file_size, file_hash`,
+    [encrypted, req.file.size, fileHash, iv, id],
+  );
 
   res.json({ book: result.rows[0] });
 }
