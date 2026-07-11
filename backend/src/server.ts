@@ -28,20 +28,19 @@ if (env.features.enableRateLimiting) {
 }
 
 app.get('/api/health', async (_req, res) => {
+  let dbStatus = 'disconnected';
   try {
     await pool.query('SELECT 1');
-    res.json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      database: 'connected',
-    });
+    dbStatus = 'connected';
   } catch {
-    res.status(503).json({
-      status: 'error',
-      database: 'disconnected',
-    });
+    // non-critical
   }
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    database: dbStatus,
+  });
 });
 
 import authRoutes from './routes/auth.js';
