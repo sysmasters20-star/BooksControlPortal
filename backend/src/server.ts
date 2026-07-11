@@ -32,8 +32,8 @@ app.get('/api/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
     dbStatus = 'connected';
-  } catch {
-    // non-critical
+  } catch (err) {
+    logger.error('Healthcheck DB query failed', { error: (err as Error).message });
   }
   res.json({
     status: 'ok',
