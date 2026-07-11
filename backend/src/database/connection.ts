@@ -7,7 +7,9 @@ const pool = new pg.Pool({
   max: env.database.pool.max,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
-  ssl: { rejectUnauthorized: false },
+  ssl: env.isProduction
+    ? { rejectUnauthorized: false }
+    : false,
 });
 
 pool.on('error', (err: Error) => {
