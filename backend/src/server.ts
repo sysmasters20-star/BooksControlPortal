@@ -55,6 +55,8 @@ app.use(errorHandler);
 
 const server = app.listen(env.port, () => {
   logger.info(`Server running on port ${env.port} in ${env.nodeEnv} mode`);
+  const dbUrl = new URL(env.database.url);
+  logger.info(`DB host: ${dbUrl.hostname}:${dbUrl.port || 5432}`);
 });
 
 process.on('SIGTERM', async () => {
