@@ -22,6 +22,7 @@ export default function Layout() {
         <Link to="/dashboard" style={{ color: '#fff', textDecoration: 'none', fontWeight: 'bold' }}>BooksControl</Link>
         <Link to="/books" style={{ color: '#ccc', textDecoration: 'none' }}>Books</Link>
         <Link to="/print-jobs" style={{ color: '#ccc', textDecoration: 'none' }}>Print Jobs</Link>
+        {user?.role === 'admin' && <Link to="/admin" style={{ color: '#ccc', textDecoration: 'none' }}>Admin</Link>}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '1rem', alignItems: 'center' }}>
           <span>{user?.name} ({user?.role})</span>
           <button onClick={logout} style={{ background: '#e94560', color: '#fff', border: 'none', padding: '0.25rem 1rem', cursor: 'pointer' }}>Logout</button>
