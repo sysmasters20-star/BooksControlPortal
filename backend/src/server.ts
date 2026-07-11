@@ -44,6 +44,14 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
+import authRoutes from './routes/auth.js';
+import bookRoutes from './routes/books.js';
+import printRoutes from './routes/print.js';
+
+app.use('/api/auth', authRoutes);
+app.use('/api/books', bookRoutes);
+app.use('/api/print', printRoutes);
+
 app.use(errorHandler);
 
 const server = app.listen(env.port, () => {

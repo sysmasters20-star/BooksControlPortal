@@ -12,7 +12,7 @@ const pool = new pg.Pool({
     : false,
 });
 
-pool.on('error', (err) => {
+pool.on('error', (err: Error) => {
   logger.error('Unexpected error on idle database client', err);
   process.exit(-1);
 });
