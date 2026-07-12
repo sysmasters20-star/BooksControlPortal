@@ -12,6 +12,22 @@ function getTokenUrl(fileId: string): string {
   return `/api/books/files/${fileId}?token=${encodeURIComponent(token)}`;
 }
 
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem('accessToken') || '';
+  return { Authorization: `Bearer ${token}` };
+}
+
+async function fetchAsBase64(url: string): Promise<string> {
+  const response = await fetch(url, { headers: getAuthHeaders() });
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 export default function SecureBookViewer() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -82,52 +98,119 @@ export default function SecureBookViewer() {
     try {
       const { data } = await booksApi.logPrintSession({ book_id: id, copies });
       const bookshopName: string = data.bookshop_name || 'Unknown';
-      const bookshopId: string = data.bookshop_id || '';
       const now = new Date();
-      const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-      const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      const watermarkText = `${bookshopName} - ID:${bookshopId} - ${dateStr} ${timeStr}`;
+      const dateStr = now.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const dateOnly = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      const watermarkText = `CONFIDENTIAL - ${bookshopName} - ${dateStr} - DO NOT DISTRIBUTE`;
 
-      const imageUrls = pages.map(p => getTokenUrl(p.id));
-
-      let bodyHtml = '<style>';
-      bodyHtml += '@page { margin: 0; size: A4; }';
-      bodyHtml += 'body { margin: 0; padding: 0; }';
-      bodyHtml += '.page-container { position: relative; width: 100%; height: 100vh; page-break-after: always; display: flex; justify-content: center; align-items: center; overflow: hidden; }';
-      bodyHtml += '.page-container:last-child { page-break-after: auto; }';
-      bodyHtml += '.forensic-watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 4rem; font-weight: bold; color: rgba(0, 0, 0, 0.15); pointer-events: none; user-select: none; z-index: 9999; white-space: nowrap; }';
-      bodyHtml += 'img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; }';
-      bodyHtml += '</style>';
-
-      for (const url of imageUrls) {
-        bodyHtml += '<div class="page-container">';
-        bodyHtml += `<img src="${url}" draggable="false" />`;
-        bodyHtml += `<div class="forensic-watermark">${watermarkText}</div>`;
-        bodyHtml += '</div>';
-      }
+      setPrintMsg('Fetching pages...');
+      const rawUrls = pages.map(p => getTokenUrl(p.id));
+      const base64Images = await Promise.all(rawUrls.map(fetchAsBase64));
 
       setPrintMsg('Preparing secure print...');
 
       const iframe = document.createElement('iframe');
-      iframe.style.position = 'absolute';
-      iframe.style.top = '-9999px';
-      iframe.style.left = '-9999px';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = 'none';
+      iframe.style.cssText = 'position:absolute;top:-9999px;left:-9999px;width:0;height:0;border:none;';
       document.body.appendChild(iframe);
+
+      let pagesHTML = '';
+      for (const base64 of base64Images) {
+        pagesHTML += `
+          <div class="page-container">
+            <img src="${base64}" class="page-image" />
+            <div class="watermark-grid">
+              <span class="wm wm-1">${watermarkText}</span>
+              <span class="wm wm-2">${watermarkText}</span>
+              <span class="wm wm-3">${watermarkText}</span>
+              <span class="wm wm-4">${watermarkText}</span>
+              <span class="wm wm-5">${watermarkText}</span>
+              <span class="wm wm-6">${watermarkText}</span>
+            </div>
+            <div class="red-border">UNAUTHORIZED COPY - ${bookshopName} - ${dateOnly}</div>
+          </div>`;
+      }
+
+      const fullHtml = `<!DOCTYPE html>
+<html>
+<head>
+<style>
+  @page { margin: 0; size: A4; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  body { margin: 0; padding: 0; background: white; }
+  .page-container {
+    position: relative;
+    width: 210mm;
+    height: 297mm;
+    page-break-after: always;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 3px solid red;
+    box-sizing: border-box;
+  }
+  .page-container:last-child { page-break-after: auto; }
+  .page-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    opacity: 0.75;
+    user-select: none;
+  }
+  .watermark-grid {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    z-index: 9999;
+  }
+  .wm {
+    position: absolute;
+    font-size: 2.5rem;
+    font-weight: 900;
+    color: rgba(255, 0, 0, 0.35);
+    transform: rotate(-35deg);
+    white-space: nowrap;
+    user-select: none;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+  }
+  .wm-1 { top: 10%; left: -10%; }
+  .wm-2 { top: 30%; left: 20%; }
+  .wm-3 { top: 50%; left: -5%; }
+  .wm-4 { top: 70%; left: 25%; }
+  .wm-5 { top: 20%; left: 50%; }
+  .wm-6 { top: 80%; left: 45%; }
+  .red-border {
+    position: absolute;
+    bottom: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.9rem;
+    font-weight: bold;
+    color: red;
+    background: yellow;
+    padding: 2px 8px;
+    z-index: 10000;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>${pagesHTML}</body>
+</html>`;
 
       const doc = iframe.contentDocument || iframe.contentWindow!.document;
       doc.open();
-      doc.write(bodyHtml);
+      doc.write(fullHtml);
       doc.close();
 
       iframe.contentWindow!.focus();
       iframe.contentWindow!.print();
 
+      iframe.contentWindow!.addEventListener('afterprint', () => {
+        if (document.body.contains(iframe)) document.body.removeChild(iframe);
+      });
       setTimeout(() => {
-        document.body.removeChild(iframe);
-      }, 2000);
+        if (document.body.contains(iframe)) document.body.removeChild(iframe);
+      }, 15000);
 
       setPrintMsg('Print dialog opened. Please select a physical printer.');
     } catch (err: unknown) {
