@@ -135,6 +135,42 @@ const migrations = [
 
   `CREATE INDEX IF NOT EXISTS idx_print_tokens_token ON print_tokens(token)`,
 
+  `CREATE TABLE IF NOT EXISTS pricing (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    book_id UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    cost_per_copy DECIMAL(10,2) NOT NULL DEFAULT 0,
+    effective_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS invoices (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bookshop_id UUID NOT NULL REFERENCES bookshops(id) ON DELETE CASCADE,
+    period_start TIMESTAMPTZ NOT NULL,
+    period_end TIMESTAMPTZ NOT NULL,
+    total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'overdue', 'cancelled')),
+    paid_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS invoice_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    book_id UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    copies INTEGER NOT NULL,
+    cost_per_copy DECIMAL(10,2) NOT NULL,
+    subtotal DECIMAL(10,2) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_pricing_book_id ON pricing(book_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_invoices_bookshop_id ON invoices(bookshop_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice_id ON invoice_items(invoice_id)`,
+
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER DEFAULT 0`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ`,
+
   `CREATE OR REPLACE FUNCTION update_updated_at_column()
    RETURNS TRIGGER AS $$
    BEGIN NEW.updated_at = NOW(); RETURN NEW; END;

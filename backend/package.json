@@ -25,6 +25,7 @@
     "jsonwebtoken": "^9.0.0",
     "multer": "^2.0.0",
     "pdf-lib": "^1.17.0",
+    "puppeteer": "^22.0.0",
     "pg": "^8.0.0",
     "typescript": "^5.0.0",
     "winston": "^3.0.0"
@@ -37,6 +38,7 @@
     "@types/jsonwebtoken": "^9.0.0",
     "@types/multer": "^1.4.0",
     "@types/node": "^20.0.0",
+    "@types/puppeteer": "^7.0.4",
     "@types/pg": "^8.20.0",
     "jest": "^29.0.0",
     "ts-jest": "^29.0.0",

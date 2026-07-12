@@ -56,7 +56,7 @@ export async function login(req: Request, res: Response) {
   const { email, password } = req.body;
 
   const result = await query(
-    'SELECT id, email, password_hash, name, role, is_verified FROM users WHERE email = $1',
+    'SELECT id, email, password_hash, name, role, is_verified, failed_login_attempts, locked_until FROM users WHERE email = $1',
     [email],
   );
 
@@ -65,17 +65,37 @@ export async function login(req: Request, res: Response) {
   }
 
   const user = result.rows[0];
+
+  if (user.locked_until && new Date(user.locked_until) > new Date()) {
+    const minutesLeft = Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 60000);
+    throw new AppError(429, `Account locked. Try again in ${minutesLeft} minute(s)`);
+  }
+
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) {
+    const attempts = (user.failed_login_attempts || 0) + 1;
+    if (attempts >= 5) {
+      await query(
+        'UPDATE users SET failed_login_attempts = $1, locked_until = NOW() + INTERVAL \'15 minutes\' WHERE id = $2',
+        [attempts, user.id]
+      );
+      throw new AppError(429, 'Account locked due to too many failed attempts. Try again in 15 minutes.');
+    }
+    await query('UPDATE users SET failed_login_attempts = $1 WHERE id = $2', [attempts, user.id]);
     throw new AppError(401, 'Invalid email or password');
   }
+
+  await query(
+    'UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = $1',
+    [user.id]
+  );
 
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
 
   await query('UPDATE users SET refresh_token = $1 WHERE id = $2', [refreshToken, user.id]);
 
-  res.json({ user, accessToken, refreshToken });
+  res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role, is_verified: user.is_verified }, accessToken, refreshToken });
 }
 
 export async function refresh(req: Request, res: Response) {

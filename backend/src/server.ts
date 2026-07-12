@@ -22,7 +22,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'", "blob:", "data:"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:"],
       frameSrc: ["'self'", "blob:"],
@@ -49,6 +49,27 @@ if (env.features.enableRateLimiting) {
   }));
 }
 
+const strictLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { status: 'error', message: 'Too many requests, please try again later' },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { status: 'error', message: 'Too many login attempts, please try again later' },
+});
+
+app.use('/api/print/:bookId/view', strictLimiter);
+app.use('/api/print/:bookId/page', strictLimiter);
+app.use('/api/print/:bookId/generate-print-pdf', strictLimiter);
+app.use('/api/auth/login', authLimiter);
+
 app.get('/api/health', async (_req, res) => {
   let dbStatus = 'disconnected';
   try {
@@ -69,11 +90,13 @@ import authRoutes from './routes/auth.js';
 import bookRoutes from './routes/books.js';
 import printRoutes from './routes/print.js';
 import adminRoutes from './routes/admin.js';
+import financeRoutes from './routes/finance.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/books', bookRoutes);
 app.use('/api/print', printRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin/finance', financeRoutes);
 
 import path from 'path';
 import { fileURLToPath } from 'url';

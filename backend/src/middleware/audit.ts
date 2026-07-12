@@ -16,8 +16,8 @@ export function auditLog(action: string, resourceType?: string) {
           req.ip || req.socket.remoteAddress || null,
         ],
       );
-    } catch {
-      // audit failures should not break the request
+    } catch (err) {
+      try { const { logger } = await import('../utils/logger.js'); logger.error('Audit log failed', { error: (err as Error).message }); } catch { /* ignore logger failures */ }
     }
     next();
   };

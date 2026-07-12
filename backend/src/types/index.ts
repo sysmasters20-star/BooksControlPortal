@@ -70,6 +70,14 @@ export interface PrintJob {
   updated_at: Date;
 }
 
+export interface WatermarkConfig {
+  bookshopName: string;
+  sessionId: string;
+  copyNum: number;
+  date: string;
+  ip?: string;
+}
+
 export interface AuditLog {
   id: string;
   user_id?: string;

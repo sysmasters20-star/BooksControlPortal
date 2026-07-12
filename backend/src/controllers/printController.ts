@@ -3,6 +3,21 @@ import crypto from 'crypto';
 import { query } from '../database/connection.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { decrypt } from '../utils/encryption.js';
+import { validateRequest } from '../utils/hmac.js';
+import { renderPage, getPageCount, generatePrintPdf as genPrintPdf } from '../services/pdfRenderer.js';
+
+interface CacheEntry {
+  pdfBuffer: Buffer;
+  totalPages: number;
+  bookshopName: string;
+  copies: number;
+}
+const pdfCache = new Map<string, CacheEntry>();
+const CACHE_TTL = 5 * 60 * 1000;
+
+setInterval(() => {
+  pdfCache.clear();
+}, CACHE_TTL);
 
 export async function listJobs(req: Request, res: Response) {
   const { bookshop_id, status, page: pageStr, limit: limitStr } = req.query;
@@ -89,8 +104,67 @@ export async function updateJobStatus(req: Request, res: Response) {
 
 export async function viewWatermarked(req: Request, res: Response) {
   const { bookId } = req.params;
-  const userId = req.user!.userId;
-  const role = req.user!.role;
+  const printToken = req.query.token as string | undefined;
+
+  let sessionId: string;
+  let bookshopId: string;
+  let bookshopName: string;
+  let copies: number;
+
+  if (printToken) {
+    const tokenResult = await query(
+      `SELECT pt.*, ps.copies, ps.id as session_id, bs.name as bookshop_name, pt.bookshop_id
+       FROM print_tokens pt
+       JOIN print_sessions ps ON ps.id = pt.session_id
+       JOIN bookshops bs ON bs.id = pt.bookshop_id
+       WHERE pt.token = $1`,
+      [printToken],
+    );
+
+    if (tokenResult.rows.length === 0) {
+      throw new AppError(404, 'Print token not found');
+    }
+
+    const tokenRow = tokenResult.rows[0];
+    if (tokenRow.expires_at < new Date()) {
+      throw new AppError(410, 'Print token has expired');
+    }
+    if (tokenRow.used_at) {
+      throw new AppError(410, 'Print token has already been used');
+    }
+    if (!['view', 'print'].includes(tokenRow.purpose)) {
+      throw new AppError(403, 'Invalid token purpose');
+    }
+
+    await query('UPDATE print_tokens SET used_at = NOW() WHERE id = $1', [tokenRow.id]);
+
+    sessionId = tokenRow.session_id;
+    bookshopId = tokenRow.bookshop_id;
+    bookshopName = tokenRow.bookshop_name;
+    copies = tokenRow.copies;
+  } else {
+    const role = req.user!.role;
+    if (role !== 'admin') {
+      throw new AppError(403, 'Access denied. Print token or admin privileges required.');
+    }
+
+    bookshopId = (req.query.bookshop_id as string) || '';
+    if (bookshopId) {
+      const sr = await query('SELECT name FROM bookshops WHERE id = $1', [bookshopId]);
+      bookshopName = sr.rows[0]?.name || 'Administrator';
+    } else {
+      bookshopName = 'Administrator';
+    }
+
+    const previewToken = crypto.randomBytes(16).toString('hex');
+    const sessionResult = await query(
+      `INSERT INTO print_sessions (book_id, bookshop_id, user_id, copies, session_token)
+       VALUES ($1, $2, $3, 0, $4) RETURNING *`,
+      [bookId, bookshopId || null, req.user!.userId, previewToken],
+    );
+    sessionId = sessionResult.rows[0].id;
+    copies = 0;
+  }
 
   const book = await query(
     'SELECT id, title, file_data, encryption_iv, pages FROM books WHERE id = $1 AND file_data IS NOT NULL',
@@ -100,37 +174,110 @@ export async function viewWatermarked(req: Request, res: Response) {
     throw new AppError(404, 'Book PDF not found');
   }
 
-  let bookshopId: string | null = null;
-  let bookshopName = 'Administrator';
-
-  if (role === 'admin') {
-    bookshopId = (req.query.bookshop_id as string) || null;
-    if (bookshopId) {
-      const sr = await query('SELECT name FROM bookshops WHERE id = $1', [bookshopId]);
-      bookshopName = sr.rows[0]?.name || 'Admin';
-    }
-  } else {
-    const shopResult = await query(
-      `SELECT bs.id, bs.name FROM bookshops bs
-       INNER JOIN book_access ba ON ba.bookshop_id = bs.id
-       WHERE ba.book_id = $1 AND bs.owner_id = $2`,
-      [bookId, userId],
-    );
-    if (shopResult.rows.length === 0) {
-      throw new AppError(403, 'No access to this book');
-    }
-    bookshopId = shopResult.rows[0].id;
-    bookshopName = shopResult.rows[0].name;
+  let pdfBuffer: Buffer;
+  try {
+    pdfBuffer = decrypt(book.rows[0].file_data, book.rows[0].encryption_iv);
+  } catch {
+    throw new AppError(500, 'Failed to decrypt PDF');
   }
 
-  let sessionToken = 'preview';
-  if (bookshopId) {
-    sessionToken = crypto.randomBytes(16).toString('hex');
-    await query(
-      `INSERT INTO print_sessions (book_id, bookshop_id, user_id, copies, session_token)
-       VALUES ($1, $2, $3, 0, $4)`,
-      [bookId, bookshopId, userId, sessionToken],
-    );
+  const totalPages = await getPageCount(pdfBuffer);
+
+  pdfCache.set(sessionId, {
+    pdfBuffer,
+    totalPages,
+    bookshopName,
+    copies,
+  });
+
+  res.json({
+    totalPages,
+    bookshopName,
+    sessionId,
+    copies,
+  });
+}
+
+export async function getPage(req: Request, res: Response) {
+  const { bookId, pageNum } = req.params;
+  const sessionId = req.query.sessionId as string;
+
+  if (!sessionId) {
+    throw new AppError(400, 'sessionId query parameter is required');
+  }
+
+  const cached = pdfCache.get(sessionId);
+  if (!cached) {
+    throw new AppError(404, 'Session not found or expired. Please request a new view token.');
+  }
+
+  const pageNumber = parseInt(pageNum, 10);
+  if (isNaN(pageNumber) || pageNumber < 1 || pageNumber > cached.totalPages) {
+    throw new AppError(400, `Invalid page number. Must be between 1 and ${cached.totalPages}`);
+  }
+
+  const now = new Date().toISOString().split('T')[0];
+  const ip = req.ip || req.socket.remoteAddress;
+
+  const pageBuffer = await renderPage(cached.pdfBuffer, pageNumber, cached.totalPages, {
+    bookshopName: cached.bookshopName,
+    sessionId,
+    copyNum: 1,
+    date: now,
+    ip,
+  });
+
+  res.set({
+    'Content-Type': 'image/png',
+    'Content-Length': pageBuffer.length.toString(),
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.send(pageBuffer);
+}
+
+export async function generatePrintPdf(req: Request, res: Response) {
+  const { bookId } = req.params;
+  const { sessionId, copies, printToken } = req.body;
+
+  if (!printToken) {
+    throw new AppError(400, 'printToken is required');
+  }
+
+  const tokenResult = await query(
+    `SELECT pt.*, ps.copies as session_copies, bs.name as bookshop_name
+     FROM print_tokens pt
+     JOIN print_sessions ps ON ps.id = pt.session_id
+     JOIN bookshops bs ON bs.id = pt.bookshop_id
+     WHERE pt.token = $1`,
+    [printToken],
+  );
+
+  if (tokenResult.rows.length === 0) {
+    throw new AppError(404, 'Print token not found');
+  }
+
+  const tokenRow = tokenResult.rows[0];
+  if (tokenRow.expires_at < new Date()) {
+    throw new AppError(410, 'Print token has expired');
+  }
+  if (tokenRow.used_at) {
+    throw new AppError(410, 'Print token has already been used');
+  }
+  if (tokenRow.purpose !== 'print') {
+    throw new AppError(403, 'Token is not valid for printing');
+  }
+
+  await query('UPDATE print_tokens SET used_at = NOW() WHERE id = $1', [tokenRow.id]);
+
+  const book = await query(
+    'SELECT id, title, file_data, encryption_iv FROM books WHERE id = $1 AND file_data IS NOT NULL',
+    [bookId],
+  );
+  if (book.rows.length === 0) {
+    throw new AppError(404, 'Book PDF not found');
   }
 
   let pdfBuffer: Buffer;
@@ -140,36 +287,26 @@ export async function viewWatermarked(req: Request, res: Response) {
     throw new AppError(500, 'Failed to decrypt PDF');
   }
 
-  const { PDFDocument, rgb } = await import('pdf-lib');
-  const doc = await PDFDocument.load(pdfBuffer);
-  const pages = doc.getPages();
   const now = new Date().toISOString().split('T')[0];
+  const actualCopies = copies || tokenRow.session_copies || 1;
 
-  for (const page of pages) {
-    const { width, height } = page.getSize();
-    page.drawText(`${bookshopName} | ${now} | ${sessionToken}`, {
-      x: 50,
-      y: 30,
-      size: 8,
-      color: rgb(0.5, 0.5, 0.5),
-      opacity: 0.6,
-    });
-  }
-
-  const watermarkedPdf = await doc.save();
+  const resultPdf = await genPrintPdf(pdfBuffer, {
+    bookshopName: tokenRow.bookshop_name,
+    sessionId: tokenRow.session_id,
+    copyNum: tokenRow.session_copies || 1,
+    date: now,
+    ip: req.ip || req.socket.remoteAddress,
+  }, actualCopies);
 
   res.set({
     'Content-Type': 'application/pdf',
-    'Content-Disposition': `inline; filename="${book.rows[0].title}-watermarked.pdf"`,
-    'X-Session-Id': sessionToken,
-    'Content-Length': watermarkedPdf.length.toString(),
+    'Content-Disposition': `attachment; filename="${book.rows[0].title || 'book'}-print.pdf"`,
+    'Content-Length': resultPdf.length.toString(),
     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
     'Pragma': 'no-cache',
     'Expires': '0',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'SAMEORIGIN',
   });
-  res.send(Buffer.from(watermarkedPdf));
+  res.send(resultPdf);
 }
 
 export async function countPrint(req: Request, res: Response) {
@@ -180,6 +317,14 @@ export async function countPrint(req: Request, res: Response) {
 
   if (typeof copies !== 'number' || copies < 1 || copies > 1000) {
     throw new AppError(400, 'Copies must be between 1 and 1000');
+  }
+
+  const signature = req.headers['x-signature'] as string;
+  const timestamp = parseInt(req.headers['x-timestamp'] as string, 10);
+  if (signature && timestamp) {
+    if (!validateRequest({ bookId, copies }, signature, timestamp)) {
+      throw new AppError(401, 'Invalid or expired request signature');
+    }
   }
 
   const book = await query('SELECT id FROM books WHERE id = $1', [bookId]);

@@ -2,10 +2,6 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { printApi } from '../api/print';
 
-declare global {
-  interface Window { pdfjsLib: any; }
-}
-
 export default function PrintViewer() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -17,67 +13,84 @@ export default function PrintViewer() {
   const [copies, setCopies] = useState(1);
   const [printing, setPrinting] = useState(false);
   const [printMsg, setPrintMsg] = useState('');
-  const [pages, setPages] = useState<string[]>([]);
-  const [numPages, setNumPages] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [bookshopName, setBookshopName] = useState('');
+  const [sessionId, setSessionId] = useState('');
+  const [loadedPages, setLoadedPages] = useState<Record<number, string>>({});
+  const [loadingPages, setLoadingPages] = useState<Set<number>>(new Set());
+  const [metadataLoaded, setMetadataLoaded] = useState(false);
+  const [preparingPrint, setPreparingPrint] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!id) return;
     const role = localStorage.getItem('userRole');
     if (role === 'admin') { setShowShopDialog(true); return; }
-    loadPdf();
+    loadMetadata();
   }, [id]);
 
-  const loadPdf = async (shopId?: string) => {
+  const loadMetadata = async (shopId?: string) => {
     if (!id) return;
     setLoading(true);
     setError('');
     try {
       const params: Record<string, string> = {};
       if (shopId) params.bookshop_id = shopId;
-      const response = await printApi.viewWatermarked(id, params);
-      const arrayBuffer = await (response.data as Blob).arrayBuffer();
-
-      const pdfjsLib = window.pdfjsLib;
-      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      setNumPages(pdf.numPages);
-
-      const scale = Math.min(1.5, window.innerWidth / 800);
-      const renderedPages: string[] = [];
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext('2d')!;
-        await page.render({ canvasContext: ctx, viewport }).promise;
-        renderedPages.push(canvas.toDataURL('image/png'));
-      }
-      setPages(renderedPages);
+      const { data } = await printApi.viewWatermarked(id, params);
+      setTotalPages(data.totalPages);
+      setBookshopName(data.bookshopName);
+      setSessionId(data.sessionId);
+      setMetadataLoaded(true);
     } catch (err: unknown) {
-      setError((err as { message?: string })?.message || 'Failed to load PDF');
+      setError((err as { message?: string })?.message || 'Failed to load book');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleShopConfirm = () => {
-    setShowShopDialog(false);
-    loadPdf(bookshopId || undefined);
+  const loadPage = async (pageNum: number) => {
+    if (!id || !sessionId || loadedPages[pageNum]) return;
+    setLoadingPages(prev => new Set(prev).add(pageNum));
+    try {
+      const response = await printApi.getPage(id, pageNum, { sessionId });
+      const blobUrl = URL.createObjectURL(response.data as Blob);
+      setLoadedPages(prev => ({ ...prev, [pageNum]: blobUrl }));
+    } catch {
+      // silently fail for individual pages
+    } finally {
+      setLoadingPages(prev => {
+        const next = new Set(prev);
+        next.delete(pageNum);
+        return next;
+      });
+    }
   };
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey && ['s', 'S'].includes(e.key)) || e.key === 'F12' || (e.ctrlKey && e.shiftKey && ['i', 'I', 'j', 'J'].includes(e.key))) {
-        e.preventDefault();
+    if (!metadataLoaded || !totalPages) return;
+    const visiblePages = [1, 2, 3];
+    visiblePages.forEach(p => { if (p <= totalPages) loadPage(p); });
+  }, [metadataLoaded, totalPages]);
+
+  useEffect(() => {
+    if (!metadataLoaded || !totalPages) return;
+    const handleScroll = () => {
+      if (!containerRef.current) return;
+      const { scrollTop, clientHeight } = containerRef.current;
+      const pageHeight = 800;
+      const startPage = Math.max(1, Math.floor(scrollTop / pageHeight) - 1);
+      const endPage = Math.min(totalPages, Math.ceil((scrollTop + clientHeight) / pageHeight) + 2);
+      for (let i = startPage; i <= endPage; i++) {
+        if (!loadedPages[i] && !loadingPages.has(i)) {
+          loadPage(i);
+        }
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    const container = containerRef.current;
+    container?.addEventListener('scroll', handleScroll);
+    handleScroll();
+    return () => container?.removeEventListener('scroll', handleScroll);
+  }, [metadataLoaded, totalPages, loadedPages, loadingPages]);
 
   const handlePrintClick = () => {
     if (!id) return;
@@ -92,17 +105,44 @@ export default function PrintViewer() {
     setShowPrintDialog(false);
     try {
       const { data } = await printApi.countPrint(id, { copies, bookshop_id: bookshopId || undefined });
-      setPrintMsg(`Print session logged: ${data.session.copies} copy/copies`);
-      window.print();
+      setPreparingPrint(true);
+      setPrintMsg('Preparing print...');
+      const printToken = data.print_token;
+      const pdfResponse = await printApi.generatePrintPdf(id, { sessionId, copies, printToken });
+      const blob = new Blob([pdfResponse.data as Blob], { type: 'application/pdf' });
+      const blobUrl = URL.createObjectURL(blob);
+      const printWindow = window.open(blobUrl, '_blank');
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print();
+        };
+      }
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Print recording failed';
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Print failed';
       setPrintMsg(msg);
     } finally {
       setPrinting(false);
+      setPreparingPrint(false);
     }
-  }, [id, copies, bookshopId]);
+  }, [id, copies, bookshopId, sessionId]);
+
+  const handleShopConfirm = () => {
+    setShowShopDialog(false);
+    loadMetadata(bookshopId || undefined);
+  };
 
   const handleCancelPrint = () => setShowPrintDialog(false);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (printing || preparingPrint) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [printing, preparingPrint]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] select-none" onContextMenu={(e) => e.preventDefault()}>
@@ -110,11 +150,12 @@ export default function PrintViewer() {
         <div>
           <button onClick={() => navigate(-1)} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">&larr; Back</button>
           <h1 className="text-lg font-bold text-gray-900 mt-1">Secure PDF Viewer</h1>
-          {numPages > 0 && <p className="text-xs text-gray-400 mt-0.5">{numPages} page{numPages > 1 ? 's' : ''}</p>}
+          {totalPages > 0 && <p className="text-xs text-gray-400 mt-0.5">{totalPages} page{totalPages > 1 ? 's' : ''}</p>}
+          {bookshopName && <p className="text-xs text-gray-400">Watermark: {bookshopName}</p>}
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={handlePrintClick} disabled={printing || pages.length === 0} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
-            {printing ? 'Recording...' : 'Print'}
+          <button onClick={handlePrintClick} disabled={printing || preparingPrint || totalPages === 0} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
+            {preparingPrint ? 'Preparing...' : printing ? 'Recording...' : 'Print'}
           </button>
         </div>
       </div>
@@ -130,23 +171,40 @@ export default function PrintViewer() {
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
             <div className="text-center">
               <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full mx-auto mb-2" />
-              <p className="text-sm text-gray-500">Loading watermarked PDF...</p>
+              <p className="text-sm text-gray-500">Loading watermarked book...</p>
             </div>
           </div>
         )}
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
             <div className="text-center px-6">
-              <p className="text-red-600 font-medium mb-1">Unable to load PDF</p>
+              <p className="text-red-600 font-medium mb-1">Unable to load book</p>
               <p className="text-sm text-gray-500">{error}</p>
-              <p className="text-xs text-gray-400 mt-2">Make sure the book has a PDF uploaded and you have access.</p>
+              <p className="text-xs text-gray-400 mt-2">Make sure the book has pages and you have access.</p>
             </div>
           </div>
         )}
-        {pages.length > 0 && (
+        {metadataLoaded && totalPages > 0 && (
           <div className="flex flex-col items-center gap-4 py-6 px-4">
-            {pages.map((dataUrl, i) => (
-              <img key={i} src={dataUrl} alt={`Page ${i + 1}`} className="w-full max-w-[800px] shadow-xl rounded-lg" draggable={false} />
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+              <div key={pageNum} className="w-full max-w-[800px] relative">
+                {!loadedPages[pageNum] && (
+                  <div className="w-full aspect-[3/4] bg-gray-200 rounded-lg flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="animate-spin w-6 h-6 border-4 border-primary-500 border-t-transparent rounded-full mx-auto mb-1" />
+                      <p className="text-xs text-gray-400">Loading page {pageNum}...</p>
+                    </div>
+                  </div>
+                )}
+                {loadedPages[pageNum] && (
+                  <img
+                    src={loadedPages[pageNum]}
+                    alt={`Page ${pageNum}`}
+                    className="w-full max-w-[800px] shadow-xl rounded-lg"
+                    draggable={false}
+                  />
+                )}
+              </div>
             ))}
           </div>
         )}
