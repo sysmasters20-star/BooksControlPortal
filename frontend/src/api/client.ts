@@ -5,7 +5,10 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+const authFree = ['/auth/login', '/auth/register'];
+
 api.interceptors.request.use((config) => {
+  if (authFree.includes(config.url || '')) return config;
   const token = localStorage.getItem('accessToken');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -18,6 +21,9 @@ api.interceptors.response.use(
   async (error) => {
     const original = error.config;
     if (error.response?.status === 401 && !original._retry) {
+      if (authFree.includes(original.url || '')) {
+        return Promise.reject(error);
+      }
       original._retry = true;
       const refreshToken = localStorage.getItem('refreshToken');
       if (refreshToken) {
