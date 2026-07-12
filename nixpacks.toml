@@ -25,5 +25,6 @@ aptPkgs = [
   'libxi6',
   'libxrandr2',
   'libxss1',
+  'libuuid1',
   'libxtst6',
 ]
