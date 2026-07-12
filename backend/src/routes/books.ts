@@ -9,6 +9,7 @@ import { validate, schemas } from '../utils/validate.js';
 const router = Router();
 
 router.get('/', authenticate, asyncHandler(bookController.list));
+router.get('/stats', authenticate, asyncHandler(bookController.getStats));
 router.get('/:id', authenticate, asyncHandler(bookController.getById));
 router.get('/:id/shops', authenticate, asyncHandler(bookController.listAssignedBookshops));
 router.post('/', authenticate, authorize('admin'), upload.single('file'), validate(schemas.createBook), auditLog('create_book', 'book'), asyncHandler(bookController.create));

@@ -9,6 +9,7 @@ export interface BookData {
 
 export const booksApi = {
   list: (params?: Record<string, string>) => api.get('/books', { params }),
+  getStats: () => api.get('/books/stats'),
   getById: (id: string) => api.get(`/books/${id}`),
   create: (data: BookData) => api.post('/books', data),
   updateStatus: (id: string, status: string) => api.patch(`/books/${id}/status`, { status }),

@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { booksApi, BookData } from '../../api/books';
 import { adminApi } from '../../api/admin';
+import Pagination from '../../components/Pagination';
+import Toast from '../../components/Toast';
+import Skeleton from '../../components/Skeleton';
 
 interface Book {
   id: string; title: string; author: string; isbn: string;
@@ -20,7 +23,13 @@ export default function AdminBooks() {
   const [assignBookId, setAssignBookId] = useState('');
   const [assignShopId, setAssignShopId] = useState('');
   const [creating, setCreating] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -35,16 +44,30 @@ export default function AdminBooks() {
 
   const handleBulkStatus = async (status: string) => {
     if (selectedIds.size === 0) return;
-    await booksApi.bulkUpdateStatus(Array.from(selectedIds), status);
+    try {
+      await booksApi.bulkUpdateStatus(Array.from(selectedIds), status);
+      setToast({ message: `Updated ${selectedIds.size} books to ${status}`, type: 'success' });
+    } catch {
+      setToast({ message: 'Failed to update books', type: 'error' });
+    }
     setSelectedIds(new Set());
     load();
   };
 
-  const load = () => booksApi.list().then(({ data }) => setBooks(data.books || []));
+  const load = () => {
+    setLoading(true);
+    const params: Record<string, string> = { page: String(page), limit: String(limit) };
+    booksApi.list(params).then(({ data }) => {
+      setBooks(data.books || []);
+      setTotal(data.total || 0);
+      setTotalPages(data.totalPages || 0);
+    }).catch(() => setToast({ message: 'Failed to load books', type: 'error' })).finally(() => setLoading(false));
+  };
+
   useEffect(() => {
     load();
-    adminApi.listBookshops().then(({ data }) => setAllShops(data.bookshops || []));
-  }, []);
+    adminApi.listBookshops().then(({ data }) => setAllShops(data.bookshops || [])).catch(() => {});
+  }, [page, limit]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,7 +80,10 @@ export default function AdminBooks() {
     try {
       const token = localStorage.getItem('accessToken');
       await fetch('/api/books', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
-    } catch { /* */ }
+      setToast({ message: 'Book created successfully', type: 'success' });
+    } catch {
+      setToast({ message: 'Failed to create book', type: 'error' });
+    }
     setForm({ title: '', author: '', isbn: '', file: null });
     setShowForm(false);
     setCreating(false);
@@ -65,13 +91,23 @@ export default function AdminBooks() {
   };
 
   const handleStatus = async (id: string, status: string) => {
-    await booksApi.updateStatus(id, status);
+    try {
+      await booksApi.updateStatus(id, status);
+      setToast({ message: 'Status updated', type: 'success' });
+    } catch {
+      setToast({ message: 'Failed to update status', type: 'error' });
+    }
     load();
   };
 
   const handleAssign = async () => {
     if (!assignBookId || !assignShopId) return;
-    await booksApi.assignShop(assignBookId, assignShopId);
+    try {
+      await booksApi.assignShop(assignBookId, assignShopId);
+      setToast({ message: 'Book assigned to bookshop', type: 'success' });
+    } catch {
+      setToast({ message: 'Failed to assign book', type: 'error' });
+    }
     setAssignBookId('');
     setAssignShopId('');
   };
@@ -88,6 +124,7 @@ export default function AdminBooks() {
 
   return (
     <div>
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">All Books</h1>
@@ -137,50 +174,55 @@ export default function AdminBooks() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="px-4 py-3 w-10">
-                  <input type="checkbox" checked={selectedIds.size === books.length && books.length > 0} onChange={toggleSelectAll} className="rounded border-gray-300" />
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Title</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Author</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Shops</th>
-                <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {books.map((book) => (
-                <tr key={book.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3">
-                    <input type="checkbox" checked={selectedIds.has(book.id)} onChange={() => toggleSelect(book.id)} className="rounded border-gray-300" />
-                  </td>
-                  <td className="px-4 py-3">
-                    <Link to={`/books/${book.id}`} className="text-sm font-medium text-primary-600 hover:text-primary-700">{book.title}</Link>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 hidden sm:table-cell">{book.author || '-'}</td>
-                  <td className="px-4 py-3">{statusBadge(book.status)}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell">{book.shop_count || 0}</td>
-                  <td className="px-4 py-3 text-right">
-                    <select onChange={(e) => { if (e.target.value) handleStatus(book.id, e.target.value); e.target.value = ''; }} className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 outline-none">
-                      <option value="">Status...</option>
-                      <option value="approved">Approve</option>
-                      <option value="rejected">Reject</option>
-                      <option value="archived">Archive</option>
-                    </select>
-                  </td>
+      {loading ? (
+        <Skeleton rows={5} cols={6} />
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-3 w-10">
+                    <input type="checkbox" checked={selectedIds.size === books.length && books.length > 0} onChange={toggleSelectAll} className="rounded border-gray-300" />
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Title</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Author</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Shops</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
                 </tr>
-              ))}
-              {books.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400 text-sm">No books found</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {books.map((book) => (
+                  <tr key={book.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <input type="checkbox" checked={selectedIds.has(book.id)} onChange={() => toggleSelect(book.id)} className="rounded border-gray-300" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link to={`/books/${book.id}`} className="text-sm font-medium text-primary-600 hover:text-primary-700">{book.title}</Link>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 hidden sm:table-cell">{book.author || '-'}</td>
+                    <td className="px-4 py-3">{statusBadge(book.status)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell">{book.shop_count || 0}</td>
+                    <td className="px-4 py-3 text-right">
+                      <select onChange={(e) => { if (e.target.value) handleStatus(book.id, e.target.value); e.target.value = ''; }} className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 outline-none">
+                        <option value="">Status...</option>
+                        <option value="approved">Approve</option>
+                        <option value="rejected">Reject</option>
+                        <option value="archived">Archive</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+                {books.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400 text-sm">No books found</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
+      <Pagination page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} onLimitChange={(l) => { setLimit(l); setPage(1); }} />
     </div>
   );
 }

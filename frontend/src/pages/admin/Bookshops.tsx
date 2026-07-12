@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { adminApi } from '../../api/admin';
+import Pagination from '../../components/Pagination';
+import Toast from '../../components/Toast';
+import Skeleton from '../../components/Skeleton';
 
 interface Bookshop {
   id: string; name: string; email: string; phone: string; owner_name: string;
@@ -11,25 +14,51 @@ export default function AdminBookshops() {
   const [bookshops, setBookshops] = useState<Bookshop[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', phone: '', address: '', owner_name: '', owner_email: '', owner_password: '' });
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-  const load = () => adminApi.listBookshops().then(({ data }) => setBookshops(data.bookshops || []));
-  useEffect(() => { load(); }, []);
+  const load = () => {
+    setLoading(true);
+    const params: Record<string, string> = { page: String(page), limit: String(limit) };
+    adminApi.listBookshops(params).then(({ data }) => {
+      setBookshops(data.bookshops || []);
+      setTotal(data.total || 0);
+      setTotalPages(data.totalPages || 0);
+    }).catch(() => setToast({ message: 'Failed to load bookshops', type: 'error' })).finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, [page, limit]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    await adminApi.createBookshop(form);
+    try {
+      await adminApi.createBookshop(form);
+      setToast({ message: 'Bookshop created successfully', type: 'success' });
+    } catch {
+      setToast({ message: 'Failed to create bookshop', type: 'error' });
+    }
     setForm({ name: '', email: '', phone: '', address: '', owner_name: '', owner_email: '', owner_password: '' });
     setShowForm(false);
     load();
   };
 
   const handleToggleActive = async (shop: Bookshop) => {
-    await adminApi.updateBookshop(shop.id, { is_active: !shop.is_active });
+    try {
+      await adminApi.updateBookshop(shop.id, { is_active: !shop.is_active });
+      setToast({ message: `Bookshop ${shop.is_active ? 'deactivated' : 'activated'}`, type: 'success' });
+    } catch {
+      setToast({ message: 'Failed to update bookshop', type: 'error' });
+    }
     load();
   };
 
   return (
     <div>
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Bookshops</h1>
@@ -73,45 +102,50 @@ export default function AdminBookshops() {
         </form>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Owner</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Books</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Prints</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Active</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {bookshops.map((shop) => (
-                <tr key={shop.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3">
-                    <Link to={`/admin/bookshops/${shop.id}`} className="text-sm font-medium text-primary-600 hover:text-primary-700">{shop.name}</Link>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 hidden sm:table-cell">{shop.owner_name || '-'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell">{shop.assigned_books}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{shop.total_prints}</td>
-                  <td className="px-4 py-3">
-                    <button onClick={() => handleToggleActive(shop)} className={`px-2 py-0.5 rounded-full text-xs font-medium ${shop.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>
-                      {shop.is_active ? 'Active' : 'Inactive'}
-                    </button>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Link to={`/admin/bookshops/${shop.id}`} className="text-sm text-primary-600 hover:text-primary-700 font-medium">Analytics</Link>
-                  </td>
+      {loading ? (
+        <Skeleton rows={5} cols={6} />
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Owner</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Books</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Prints</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Active</th>
+                  <th className="px-4 py-3" />
                 </tr>
-              ))}
-              {bookshops.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400 text-sm">No bookshops yet</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {bookshops.map((shop) => (
+                  <tr key={shop.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <Link to={`/admin/bookshops/${shop.id}`} className="text-sm font-medium text-primary-600 hover:text-primary-700">{shop.name}</Link>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 hidden sm:table-cell">{shop.owner_name || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell">{shop.assigned_books}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">{shop.total_prints}</td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => handleToggleActive(shop)} className={`px-2 py-0.5 rounded-full text-xs font-medium ${shop.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>
+                        {shop.is_active ? 'Active' : 'Inactive'}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link to={`/admin/bookshops/${shop.id}`} className="text-sm text-primary-600 hover:text-primary-700 font-medium">Analytics</Link>
+                    </td>
+                  </tr>
+                ))}
+                {bookshops.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400 text-sm">No bookshops yet</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
+      <Pagination page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} onLimitChange={(l) => { setLimit(l); setPage(1); }} />
     </div>
   );
 }

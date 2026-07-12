@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { booksApi } from '../api/books';
 import { printApi } from '../api/print';
 import { adminApi } from '../api/admin';
+import Toast from '../components/Toast';
 
 interface Book {
   id: string; title: string; author: string; isbn: string; status: string;
@@ -24,16 +25,17 @@ export default function BookDetail() {
   const [assignShopId, setAssignShopId] = useState('');
   const [allShops, setAllShops] = useState<Bookshop[]>([]);
   const [showAssign, setShowAssign] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const loadBook = () => {
     if (!id) return;
-    booksApi.getById(id).then(({ data }) => setBook(data.book));
+    booksApi.getById(id).then(({ data }) => setBook(data.book)).catch(() => setToast({ message: 'Failed to load book details', type: 'error' }));
   };
 
   useEffect(() => {
     loadBook();
     if (role === 'admin') {
-      adminApi.listBookshops().then(({ data }) => setAllShops(data.bookshops || []));
+      adminApi.listBookshops().then(({ data }) => setAllShops(data.bookshops || [])).catch(() => {});
     }
   }, [id]);
 
@@ -45,38 +47,63 @@ export default function BookDetail() {
     setUploading(true);
     const formData = new FormData();
     formData.append('file', input.files[0]);
-    await fetch(`/api/books/${id}/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
-      body: formData,
-    });
+    try {
+      await fetch(`/api/books/${id}/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
+        body: formData,
+      });
+      setToast({ message: 'PDF uploaded successfully', type: 'success' });
+    } catch {
+      setToast({ message: 'Failed to upload PDF', type: 'error' });
+    }
     setUploading(false);
     loadBook();
   };
 
   const handleStatusChange = async () => {
     if (!id || !newStatus) return;
-    await booksApi.updateStatus(id, newStatus);
+    try {
+      await booksApi.updateStatus(id, newStatus);
+      setToast({ message: `Status changed to ${newStatus}`, type: 'success' });
+    } catch {
+      setToast({ message: 'Failed to change status', type: 'error' });
+    }
     setNewStatus('');
     loadBook();
   };
 
   const handlePrint = async () => {
     if (!id) return;
-    await printApi.createJob({ book_id: id, copies });
-    navigate('/print-jobs');
+    try {
+      await printApi.createJob({ book_id: id, copies });
+      setToast({ message: 'Print job submitted', type: 'success' });
+      navigate('/print-jobs');
+    } catch {
+      setToast({ message: 'Failed to create print job', type: 'error' });
+    }
   };
 
   const handleAssign = async () => {
     if (!id || !assignShopId) return;
-    await booksApi.assignShop(id, assignShopId);
+    try {
+      await booksApi.assignShop(id, assignShopId);
+      setToast({ message: 'Bookshop assigned', type: 'success' });
+    } catch {
+      setToast({ message: 'Failed to assign bookshop', type: 'error' });
+    }
     setAssignShopId('');
     loadBook();
   };
 
   const handleUnassign = async (shopId: string) => {
     if (!id) return;
-    await booksApi.unassignShop(id, shopId);
+    try {
+      await booksApi.unassignShop(id, shopId);
+      setToast({ message: 'Bookshop unassigned', type: 'success' });
+    } catch {
+      setToast({ message: 'Failed to unassign bookshop', type: 'error' });
+    }
     loadBook();
   };
 
@@ -94,6 +121,7 @@ export default function BookDetail() {
 
   return (
     <div className="max-w-4xl">
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <button onClick={() => navigate('/books')} className="text-sm text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-1">&larr; Back to Books</button>
 
       <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">

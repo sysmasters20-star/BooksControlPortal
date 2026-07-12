@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { authApi } from '../api/auth';
 import { booksApi } from '../api/books';
-import { printApi } from '../api/print';
 
 interface User {
   name: string; email: string; role: string;
@@ -9,24 +8,18 @@ interface User {
 
 export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
-  const [stats, setStats] = useState({ books: 0, printJobs: 0, sessions: 0, printedCopies: 0 });
+  const [stats, setStats] = useState({ total_books: 0, total_print_jobs: 0, total_sessions: 0, total_copies: 0 });
 
   useEffect(() => {
     authApi.me().then(({ data }) => setUser(data.user));
-    booksApi.list().then(({ data }) => setStats((s) => ({ ...s, books: data.books?.length || 0 })));
-    printApi.listJobs().then(({ data }) => setStats((s) => ({ ...s, printJobs: data.printJobs?.length || 0 })));
-    printApi.listSessions({ limit: '1000' }).then(({ data }) => {
-      const sessions = data.sessions || [];
-      const copies = sessions.reduce((sum: number, s: { copies: number }) => sum + (s.copies || 0), 0);
-      setStats((s) => ({ ...s, sessions: sessions.length, printedCopies: copies }));
-    });
+    booksApi.getStats().then(({ data }) => setStats(data.stats));
   }, []);
 
   const cards = [
-    { label: 'Total Books', value: stats.books, color: 'from-blue-500 to-blue-600', icon: '📚' },
-    { label: 'Print Jobs', value: stats.printJobs, color: 'from-amber-500 to-amber-600', icon: '🖨️' },
-    { label: 'Print Sessions', value: stats.sessions, color: 'from-emerald-500 to-emerald-600', icon: '📋' },
-    { label: 'Printed Copies', value: stats.printedCopies, color: 'from-violet-500 to-violet-600', icon: '📄' },
+    { label: 'Total Books', value: stats.total_books, color: 'from-blue-500 to-blue-600' },
+    { label: 'Print Jobs', value: stats.total_print_jobs, color: 'from-amber-500 to-amber-600' },
+    { label: 'Print Sessions', value: stats.total_sessions, color: 'from-emerald-500 to-emerald-600' },
+    { label: 'Printed Copies', value: stats.total_copies, color: 'from-violet-500 to-violet-600' },
   ];
 
   return (
@@ -39,9 +32,6 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((card) => (
           <div key={card.label} className={`bg-gradient-to-br ${card.color} rounded-xl p-6 text-white shadow-lg`}>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-3xl">{card.icon}</span>
-            </div>
             <p className="text-3xl font-bold">{card.value}</p>
             <p className="text-white/80 text-sm mt-1">{card.label}</p>
           </div>

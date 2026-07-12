@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { booksApi, BookData } from '../api/books';
+import Pagination from '../components/Pagination';
+import Toast from '../components/Toast';
+import Skeleton from '../components/Skeleton';
 
 interface Book {
   id: string; title: string; author: string; isbn: string;
@@ -14,16 +17,27 @@ export default function Books() {
   const [filterStatus, setFilterStatus] = useState('');
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const role = localStorage.getItem('userRole');
 
   const loadBooks = () => {
-    const params: Record<string, string> = {};
+    setLoading(true);
+    const params: Record<string, string> = { page: String(page), limit: String(limit) };
     if (filterStatus) params.status = filterStatus;
     if (search) params.search = search;
-    booksApi.list(params).then(({ data }) => setBooks(data.books || []));
+    booksApi.list(params).then(({ data }) => {
+      setBooks(data.books || []);
+      setTotal(data.total || 0);
+      setTotalPages(data.totalPages || 0);
+    }).catch(() => setToast({ message: 'Failed to load books', type: 'error' })).finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadBooks(); }, [filterStatus, search]);
+  useEffect(() => { loadBooks(); }, [page, limit, filterStatus, search]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +54,10 @@ export default function Books() {
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
       });
-    } catch { /* handled */ }
+      setToast({ message: 'Book created successfully', type: 'success' });
+    } catch {
+      setToast({ message: 'Failed to create book', type: 'error' });
+    }
     setForm({ title: '', author: '', isbn: '', file: null });
     setShowForm(false);
     setCreating(false);
@@ -59,6 +76,7 @@ export default function Books() {
 
   return (
     <div>
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Books</h1>
@@ -72,14 +90,14 @@ export default function Books() {
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+        <select value={filterStatus} onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }} className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none">
           <option value="">All Status</option>
           <option value="pending">Pending</option>
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
           <option value="archived">Archived</option>
         </select>
-        <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by title or author..." className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+        <input type="text" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search by title or author..." className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
       </div>
 
       {showForm && (
@@ -109,43 +127,48 @@ export default function Books() {
         </form>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Title</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Author</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">ISBN</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                {role === 'admin' && <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Shops</th>}
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Created</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {books.map((book) => (
-                <tr key={book.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3">
-                    <Link to={`/books/${book.id}`} className="text-sm font-medium text-primary-600 hover:text-primary-700">{book.title}</Link>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{book.author || '-'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500 hidden sm:table-cell">{book.isbn || '-'}</td>
-                  <td className="px-4 py-3">{statusBadge(book.status)}</td>
-                  {role === 'admin' && <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell">{book.shop_count || 0}</td>}
-                  <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell">{new Date(book.created_at).toLocaleDateString()}</td>
-                  <td className="px-4 py-3 text-right">
-                    <Link to={`/books/${book.id}`} className="text-sm text-primary-600 hover:text-primary-700 font-medium">View</Link>
-                  </td>
+      {loading ? (
+        <Skeleton rows={5} cols={role === 'admin' ? 7 : 6} />
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Title</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Author</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">ISBN</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                  {role === 'admin' && <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Shops</th>}
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Created</th>
+                  <th className="px-4 py-3" />
                 </tr>
-              ))}
-              {books.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-12 text-center text-gray-400 text-sm">No books found. {role === 'admin' ? 'Click "Add Book" to create one.' : ''}</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {books.map((book) => (
+                  <tr key={book.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <Link to={`/books/${book.id}`} className="text-sm font-medium text-primary-600 hover:text-primary-700">{book.title}</Link>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{book.author || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500 hidden sm:table-cell">{book.isbn || '-'}</td>
+                    <td className="px-4 py-3">{statusBadge(book.status)}</td>
+                    {role === 'admin' && <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell">{book.shop_count || 0}</td>}
+                    <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell">{new Date(book.created_at).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-right">
+                      <Link to={`/books/${book.id}`} className="text-sm text-primary-600 hover:text-primary-700 font-medium">View</Link>
+                    </td>
+                  </tr>
+                ))}
+                {books.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-12 text-center text-gray-400 text-sm">No books found. {role === 'admin' ? 'Click "Add Book" to create one.' : ''}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
+      <Pagination page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} onLimitChange={(l) => { setLimit(l); setPage(1); }} />
     </div>
   );
 }
