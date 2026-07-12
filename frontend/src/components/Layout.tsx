@@ -25,10 +25,16 @@ export default function Layout() {
   const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null);
 
   useEffect(() => {
+    if (!localStorage.getItem('accessToken')) {
+      navigate('/login');
+      return;
+    }
     authApi.me().then(({ data }) => {
       setUser(data.user);
       localStorage.setItem('userRole', data.user.role);
-    }).catch(() => navigate('/login'));
+    }).catch(() => {
+      setUser(null);
+    });
   }, [navigate]);
 
   const logout = () => {
