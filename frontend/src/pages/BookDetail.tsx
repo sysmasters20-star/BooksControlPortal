@@ -105,7 +105,7 @@ export default function BookDetail() {
               <span className="text-sm text-gray-500">by {book.author || 'Unknown'}</span>
             </div>
           </div>
-          {role === 'admin' && book.status === 'approved' && (
+          {role === 'admin' && (
             <Link to={`/print/${id}`} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors text-center">View &amp; Print</Link>
           )}
         </div>

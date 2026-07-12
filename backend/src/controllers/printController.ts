@@ -168,7 +168,6 @@ export async function viewWatermarked(req: Request, res: Response) {
     'Expires': '0',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'SAMEORIGIN',
-    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'self'",
   });
   res.send(Buffer.from(watermarkedPdf));
 }

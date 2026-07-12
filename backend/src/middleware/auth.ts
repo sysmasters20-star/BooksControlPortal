@@ -13,12 +13,20 @@ declare global {
 }
 
 export function authenticate(req: Request, _res: Response, next: NextFunction) {
+  let token: string | null = null;
+
   const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) {
-    throw new AppError(401, 'Authentication required');
+  if (header?.startsWith('Bearer ')) {
+    token = header.split(' ')[1];
   }
 
-  const token = header.split(' ')[1];
+  if (!token && req.query.token) {
+    token = req.query.token as string;
+  }
+
+  if (!token) {
+    throw new AppError(401, 'Authentication required');
+  }
 
   try {
     const decoded = jwt.verify(token, env.jwt.secret) as JwtPayload;

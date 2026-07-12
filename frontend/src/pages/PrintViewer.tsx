@@ -9,36 +9,42 @@ export default function PrintViewer() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showPrintDialog, setShowPrintDialog] = useState(false);
+  const [showShopDialog, setShowShopDialog] = useState(false);
+  const [bookshopId, setBookshopId] = useState('');
   const [copies, setCopies] = useState(1);
   const [printing, setPrinting] = useState(false);
   const [printMsg, setPrintMsg] = useState('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const pdfUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
-    setLoading(true);
-    const params: Record<string, string> = {};
     const role = localStorage.getItem('userRole');
-    if (role === 'admin') {
-      params.bookshop_id = prompt('Enter Bookshop ID (optional):') || '';
-    }
-    printApi.viewWatermarked(id, params)
-      .then((response) => {
-        const blob = response.data as Blob;
-        const url = URL.createObjectURL(blob);
-        setPdfUrl(url);
-        pdfUrlRef.current = url;
-      })
-      .catch((err) => {
-        setError(err.response?.data?.message || 'Failed to load PDF');
-      })
-      .finally(() => setLoading(false));
+    const token = localStorage.getItem('accessToken');
+    if (!token) { setError('Not authenticated'); setLoading(false); return; }
 
-    return () => {
-      if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
-    };
+    if (role === 'admin') {
+      setShowShopDialog(true);
+      return;
+    }
+
+    setLoading(false);
+    const url = `/api/print/${id}/view?token=${encodeURIComponent(token)}`;
+    setPdfUrl(url);
   }, [id]);
+
+  const handleShopConfirm = () => {
+    const token = localStorage.getItem('accessToken');
+    const role = localStorage.getItem('userRole');
+    if (!id || !token) return;
+
+    let url = `/api/print/${id}/view?token=${encodeURIComponent(token)}`;
+    if (role === 'admin' && bookshopId) {
+      url += `&bookshop_id=${encodeURIComponent(bookshopId)}`;
+    }
+    setShowShopDialog(false);
+    setLoading(false);
+    setPdfUrl(url);
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -62,7 +68,7 @@ export default function PrintViewer() {
     setPrintMsg('');
     setShowPrintDialog(false);
     try {
-      const { data } = await printApi.countPrint(id, { copies });
+      const { data } = await printApi.countPrint(id, { copies, bookshop_id: bookshopId || undefined });
       setPrintMsg(`Print session logged: ${data.session.copies} copy/copies`);
       if (iframeRef.current) {
         iframeRef.current.contentWindow?.print();
@@ -73,7 +79,7 @@ export default function PrintViewer() {
     } finally {
       setPrinting(false);
     }
-  }, [id, copies]);
+  }, [id, copies, bookshopId]);
 
   const handleCancelPrint = () => {
     setShowPrintDialog(false);
@@ -127,6 +133,36 @@ export default function PrintViewer() {
           />
         )}
       </div>
+
+      {showShopDialog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Bookshop Selection</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Enter a Bookshop ID to view analytics for that shop, or leave empty for admin preview.
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Bookshop ID (optional)</label>
+              <input
+                type="text"
+                value={bookshopId}
+                onChange={(e) => setBookshopId(e.target.value)}
+                placeholder="Leave empty for admin preview"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setShowShopDialog(false); navigate(-1); }} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleShopConfirm} className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors">
+                View PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showPrintDialog && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={handleCancelPrint}>
