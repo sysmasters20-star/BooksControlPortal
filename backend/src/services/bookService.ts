@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { query, getClient } from '../database/connection.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { encrypt } from '../utils/encryption.js';
-import { pdfToPageBuffers } from './pdfPageRenderer.js';
+import { pdfToPageBuffers } from './pdfRenderer.js';
 
 export async function listBooks(filters: Record<string, any>, userId: string, role: string) {
   const { status, search, page: pageStr, limit: limitStr } = filters;

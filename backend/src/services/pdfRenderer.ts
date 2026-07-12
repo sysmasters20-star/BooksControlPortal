@@ -15,6 +15,38 @@ async function getBrowser(): Promise<puppeteer.Browser> {
   return browser;
 }
 
+export async function pdfToPageBuffers(pdfBuffer: Buffer): Promise<Buffer[]> {
+  const doc = await PDFDocument.load(pdfBuffer);
+  const br = await getBrowser();
+  const pages: Buffer[] = [];
+
+  for (let i = 0; i < doc.getPageCount(); i++) {
+    const singlePdf = await PDFDocument.create();
+    const [copiedPage] = await singlePdf.copyPages(doc, [i]);
+    singlePdf.addPage(copiedPage);
+    const pageBytes = await singlePdf.save();
+
+    const { width, height } = copiedPage.getSize();
+    const puppeteerPage = await br.newPage();
+    const scale = 1.5;
+    await puppeteerPage.setViewport({
+      width: Math.round((width * scale) / 72 * 96),
+      height: Math.round((height * scale) / 72 * 96),
+      deviceScaleFactor: 2,
+    });
+
+    const pdfBase64 = Buffer.from(pageBytes).toString('base64');
+    await puppeteerPage.goto(`data:application/pdf;base64,${pdfBase64}`, { waitUntil: 'networkidle0' });
+    await new Promise(r => setTimeout(r, 1000));
+
+    const screenshot = await puppeteerPage.screenshot({ type: 'png' });
+    pages.push(Buffer.from(screenshot));
+    await puppeteerPage.close();
+  }
+
+  return pages;
+}
+
 export async function getPageCount(pdfBuffer: Buffer): Promise<number> {
   const doc = await PDFDocument.load(pdfBuffer);
   return doc.getPageCount();
