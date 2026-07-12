@@ -41,6 +41,47 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const possiblePaths = [
+  path.resolve(__dirname, '../../frontend/dist'),
+  path.resolve(__dirname, '../../../frontend/dist'),
+  path.resolve(process.cwd(), 'frontend/dist'),
+];
+
+let frontendDist = possiblePaths[0];
+for (const p of possiblePaths) {
+  if (fs.existsSync(path.join(p, 'index.html'))) {
+    frontendDist = p;
+    break;
+  }
+}
+
+logger.info(`Serving frontend from: ${frontendDist}`);
+logger.info(`Assets exist: ${fs.existsSync(path.join(frontendDist, 'assets'))}`);
+
+app.use(express.static(frontendDist, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('index.html')) {
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.set('Pragma', 'no-cache');
+    } else {
+      res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  },
+}));
+
+app.get('/{*splat}', (_req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.sendFile(path.join(frontendDist, 'index.html'), (err) => {
+    if (err) res.status(404).json({ error: 'Not found' });
+  });
+});
+
 if (env.features.enableRateLimiting) {
   app.use(rateLimit({
     windowMs: env.rateLimit.windowMinutes * 60 * 1000,
@@ -99,47 +140,6 @@ app.use('/api/books', bookRoutes);
 app.use('/api/print', printRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/finance', financeRoutes);
-
-import path from 'path';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const possiblePaths = [
-  path.resolve(__dirname, '../../frontend/dist'),
-  path.resolve(__dirname, '../../../frontend/dist'),
-  path.resolve(process.cwd(), 'frontend/dist'),
-];
-
-let frontendDist = possiblePaths[0];
-for (const p of possiblePaths) {
-  if (fs.existsSync(path.join(p, 'index.html'))) {
-    frontendDist = p;
-    break;
-  }
-}
-
-logger.info(`Serving frontend from: ${frontendDist}`);
-logger.info(`Assets exist: ${fs.existsSync(path.join(frontendDist, 'assets'))}`);
-
-app.use(express.static(frontendDist, {
-  setHeaders: (res, filePath) => {
-    if (filePath.endsWith('index.html')) {
-      res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-      res.set('Pragma', 'no-cache');
-    } else {
-      res.set('Cache-Control', 'public, max-age=31536000, immutable');
-    }
-  },
-}));
-
-app.get('/{*splat}', (_req, res) => {
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-  res.set('Pragma', 'no-cache');
-  res.sendFile(path.join(frontendDist, 'index.html'), (err) => {
-    if (err) res.status(404).json({ error: 'Not found' });
-  });
-});
 
 app.use(errorHandler);
 
