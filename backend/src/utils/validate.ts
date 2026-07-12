@@ -52,7 +52,7 @@ export const schemas = {
   }),
 
   countPrint: Joi.object({
-    copies: Joi.number().integer().min(1).max(1000).default(1),
+    copies: Joi.number().integer().min(1).max(10).default(1),
     bookshop_id: Joi.string().uuid().optional(),
   }),
 

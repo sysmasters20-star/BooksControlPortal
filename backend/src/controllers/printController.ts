@@ -331,8 +331,8 @@ export async function countPrint(req: Request, res: Response) {
   const userId = req.user!.userId;
   const role = req.user!.role;
 
-  if (typeof copies !== 'number' || copies < 1 || copies > 1000) {
-    throw new AppError(400, 'Copies must be between 1 and 1000');
+  if (typeof copies !== 'number' || copies < 1 || copies > 10) {
+    throw new AppError(400, 'Copies must be between 1 and 10');
   }
 
   const signature = req.headers['x-signature'] as string;
@@ -459,6 +459,8 @@ export async function logPrintSession(req: Request, res: Response) {
   const userId = req.user!.userId;
   const role = req.user!.role;
 
+  const safeCopies = Math.max(1, Math.min(10, copies));
+
   const book = await query('SELECT id FROM books WHERE id = $1', [book_id]);
   if (book.rows.length === 0) {
     throw new AppError(404, 'Book not found');
@@ -486,7 +488,7 @@ export async function logPrintSession(req: Request, res: Response) {
   const result = await query(
     `INSERT INTO print_sessions (book_id, bookshop_id, user_id, copies, session_token, created_at)
      VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING *`,
-    [book_id, bookshopId, userId, copies, sessionToken],
+    [book_id, bookshopId, userId, safeCopies, sessionToken],
   );
 
   res.status(201).json({ session: result.rows[0], bookshop_name: bookshopName, bookshop_id: bookshopId });

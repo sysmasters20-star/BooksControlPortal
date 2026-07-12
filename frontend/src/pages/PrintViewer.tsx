@@ -37,6 +37,7 @@ export default function SecureBookViewer() {
   const [showPrintDialog, setShowPrintDialog] = useState(false);
   const [copies, setCopies] = useState(1);
   const [printing, setPrinting] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [printMsg, setPrintMsg] = useState('');
 
   useEffect(() => {
@@ -93,10 +94,12 @@ export default function SecureBookViewer() {
   const handleConfirmPrint = useCallback(async () => {
     if (!id) return;
     setPrinting(true);
+    setIsProcessing(true);
     setPrintMsg('');
     setShowPrintDialog(false);
     try {
-      const { data } = await booksApi.logPrintSession({ book_id: id, copies });
+      const safeCopies = Math.max(1, Math.min(10, copies));
+      const { data } = await booksApi.logPrintSession({ book_id: id, copies: safeCopies });
       const bookshopName: string = data.bookshop_name || 'Unknown';
       const now = new Date();
       const dateStr = now.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -105,7 +108,19 @@ export default function SecureBookViewer() {
 
       setPrintMsg('Fetching pages...');
       const rawUrls = pages.map(p => getTokenUrl(p.id));
-      const base64Images = await Promise.all(rawUrls.map(fetchAsBase64));
+      const results = await Promise.allSettled(rawUrls.map(fetchAsBase64));
+      const base64Images: string[] = [];
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') {
+          base64Images.push(r.value);
+        } else {
+          console.warn(`Page ${i + 1} skipped — failed to convert:`, r.reason);
+        }
+      });
+
+      if (base64Images.length === 0) {
+        throw new Error('Failed to load any pages. Please try again.');
+      }
 
       setPrintMsg('Preparing secure print...');
 
@@ -114,8 +129,9 @@ export default function SecureBookViewer() {
       document.body.appendChild(iframe);
 
       let pagesHTML = '';
-      for (const base64 of base64Images) {
-        pagesHTML += `
+      for (let c = 0; c < safeCopies; c++) {
+        for (const base64 of base64Images) {
+          pagesHTML += `
           <div class="page-container">
             <img src="${base64}" class="page-image" />
             <div class="watermark-grid">
@@ -128,6 +144,7 @@ export default function SecureBookViewer() {
             </div>
             <div class="red-border">UNAUTHORIZED COPY - ${bookshopName} - ${dateOnly}</div>
           </div>`;
+        }
       }
 
       const fullHtml = `<!DOCTYPE html>
@@ -204,6 +221,7 @@ export default function SecureBookViewer() {
 
       iframe.contentWindow!.focus();
       iframe.contentWindow!.print();
+      setIsProcessing(false);
 
       iframe.contentWindow!.addEventListener('afterprint', () => {
         if (document.body.contains(iframe)) document.body.removeChild(iframe);
@@ -214,6 +232,7 @@ export default function SecureBookViewer() {
 
       setPrintMsg('Print dialog opened. Please select a physical printer.');
     } catch (err: unknown) {
+      setIsProcessing(false);
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Print failed';
       setPrintMsg(msg);
     } finally {
@@ -235,7 +254,7 @@ export default function SecureBookViewer() {
           {pages.length > 0 && <p className="text-xs text-gray-400 mt-0.5">{pages.length} page{pages.length > 1 ? 's' : ''}</p>}
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={handlePrintClick} disabled={printing || pages.length === 0} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
+          <button onClick={handlePrintClick} disabled={printing || isProcessing || pages.length === 0} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
             {printing ? 'Printing...' : 'Print Book'}
           </button>
         </div>
@@ -295,6 +314,16 @@ export default function SecureBookViewer() {
         )}
       </div>
 
+      {isProcessing && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
+          <div className="bg-white rounded-xl p-8 shadow-2xl mx-4 max-w-sm w-full">
+            <div className="animate-spin w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full mx-auto mb-4" />
+            <p className="text-gray-700 font-semibold text-center">Processing book pages...</p>
+            <p className="text-sm text-gray-400 mt-2 text-center">{printMsg}</p>
+          </div>
+        </div>
+      )}
+
       {showPrintDialog && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={handleCancelPrint}>
           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
@@ -303,11 +332,11 @@ export default function SecureBookViewer() {
             <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4 font-medium">Please select a physical printer. Saving as PDF is not permitted and will embed your identity.</p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">Number of copies</label>
-              <input type="number" min={1} max={1000} value={copies} onChange={(e) => setCopies(Math.max(1, Math.min(1000, Number(e.target.value))))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" autoFocus />
+              <input type="number" min={1} max={10} value={copies} onChange={(e) => setCopies(Math.max(1, Math.min(10, Number(e.target.value))))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" autoFocus />
             </div>
             <div className="flex gap-3">
               <button onClick={handleCancelPrint} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">Cancel</button>
-              <button onClick={handleConfirmPrint} disabled={printing} className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
+              <button onClick={handleConfirmPrint} disabled={printing || isProcessing} className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
                 {printing ? 'Processing...' : 'Confirm & Print'}
               </button>
             </div>

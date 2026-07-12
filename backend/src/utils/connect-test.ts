@@ -7,8 +7,6 @@ if (!process.env.DATABASE_URL) {
 const url = process.env.DATABASE_URL;
 
 async function main() {
-  console.log('Connecting to:', url.replace(/\/\/.*@/, '//USER:PASS@'));
-
   const pool = new pg.Pool({
     connectionString: url,
     connectionTimeoutMillis: 10000,
@@ -17,10 +15,10 @@ async function main() {
 
   try {
     const r = await pool.query('SELECT 1 AS ok');
-    console.log('CONNECTED:', JSON.stringify(r.rows));
+    process.stdout.write('CONNECTED: ' + JSON.stringify(r.rows) + '\n');
     await pool.end();
   } catch (err) {
-    console.error('FAILED:', (err as Error).message);
+    process.stderr.write('FAILED: ' + (err as Error).message + '\n');
   }
   process.exit(0);
 }
