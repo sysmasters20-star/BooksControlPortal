@@ -13,7 +13,7 @@ router.get('/:id', authenticate, asyncHandler(bookController.getById));
 router.get('/:id/shops', authenticate, asyncHandler(bookController.listAssignedBookshops));
 router.post('/', authenticate, authorize('admin'), upload.single('file'), validate(schemas.createBook), auditLog('create_book', 'book'), asyncHandler(bookController.create));
 router.post('/bulk-status', authenticate, authorize('admin'), validate(schemas.bulkUpdateStatus), auditLog('bulk_update_book_status', 'book'), asyncHandler(bookController.bulkUpdateStatus));
-router.post('/:id/upload', authenticate, upload.single('file'), auditLog('upload_book', 'book'), asyncHandler(bookController.uploadFile));
+router.post('/:id/upload', authenticate, authorize('admin'), upload.single('file'), auditLog('upload_book', 'book'), asyncHandler(bookController.uploadFile));
 router.patch('/:id/status', authenticate, authorize('admin'), validate(schemas.updateBookStatus), auditLog('update_book_status', 'book'), asyncHandler(bookController.updateStatus));
 router.delete('/:id', authenticate, authorize('admin'), auditLog('delete_book', 'book'), asyncHandler(bookController.remove));
 router.post('/:id/assign', authenticate, authorize('admin'), validate(schemas.assignBookshop), auditLog('assign_bookshop', 'book'), asyncHandler(bookController.assignBookshop));

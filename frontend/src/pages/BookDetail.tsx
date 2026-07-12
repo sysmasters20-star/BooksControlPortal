@@ -131,15 +131,17 @@ export default function BookDetail() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload PDF</h3>
-          <form onSubmit={handleUpload}>
-            <input type="file" name="file" accept=".pdf" required className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 mb-4" />
-            <button type="submit" disabled={uploading} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
-              {uploading ? 'Uploading...' : 'Upload PDF'}
-            </button>
-          </form>
-        </div>
+        {role === 'admin' && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload PDF</h3>
+            <form onSubmit={handleUpload}>
+              <input type="file" name="file" accept=".pdf" required className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 mb-4" />
+              <button type="submit" disabled={uploading} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
+                {uploading ? 'Uploading...' : 'Upload PDF'}
+              </button>
+            </form>
+          </div>
+        )}
 
         {role === 'admin' && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
