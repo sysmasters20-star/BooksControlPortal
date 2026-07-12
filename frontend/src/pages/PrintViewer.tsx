@@ -80,7 +80,7 @@ export default function PrintViewer() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] select-none" onContextMenu={(e) => e.preventDefault()}>
+    <div className="flex flex-col h-[calc(100vh-8rem)] select-none print-notice" onContextMenu={(e) => e.preventDefault()}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div>
           <button onClick={() => navigate(-1)} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">&larr; Back</button>

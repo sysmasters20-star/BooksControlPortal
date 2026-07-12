@@ -3,17 +3,18 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { authApi } from '../api/auth';
 
 const navItems = [
-  { label: 'Dashboard', path: '/dashboard', icon: '📊', roles: ['admin', 'bookshop_owner'] },
-  { label: 'Books', path: '/books', icon: '📚', roles: ['admin', 'bookshop_owner'] },
-  { label: 'Print Jobs', path: '/print-jobs', icon: '🖨️', roles: ['admin', 'bookshop_owner'] },
-  { label: 'Print Sessions', path: '/print-sessions', icon: '📋', roles: ['admin', 'bookshop_owner'] },
+  { label: 'Dashboard', path: '/dashboard', roles: ['admin', 'bookshop_owner'] },
+  { label: 'Books', path: '/books', roles: ['admin', 'bookshop_owner'] },
+  { label: 'Print Jobs', path: '/print-jobs', roles: ['admin', 'bookshop_owner'] },
+  { label: 'Print Sessions', path: '/print-sessions', roles: ['admin', 'bookshop_owner'] },
 ];
 
 const adminItems = [
-  { label: 'Dashboard', path: '/admin', icon: '📈', roles: ['admin'] },
-  { label: 'Bookshops', path: '/admin/bookshops', icon: '🏪', roles: ['admin'] },
-  { label: 'Books', path: '/admin/books', icon: '📖', roles: ['admin'] },
-  { label: 'Audit Logs', path: '/admin/audit', icon: '🔍', roles: ['admin'] },
+  { label: 'Dashboard', path: '/admin', roles: ['admin'] },
+  { label: 'Bookshops', path: '/admin/bookshops', roles: ['admin'] },
+  { label: 'Books', path: '/admin/books', roles: ['admin'] },
+  { label: 'Users', path: '/admin/users', roles: ['admin'] },
+  { label: 'Audit Logs', path: '/admin/audit', roles: ['admin'] },
 ];
 
 export default function Layout() {
@@ -51,12 +52,11 @@ export default function Layout() {
 
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
           <p className="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Main</p>
-          {navItems.map((item) => (
-            <Link key={item.path} to={item.path} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive(item.path) ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}>
-              <span>{item.icon}</span>
-              {item.label}
-            </Link>
-          ))}
+              {navItems.map((item) => (
+                <Link key={item.path} to={item.path} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive(item.path) ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}>
+                  {item.label}
+                </Link>
+              ))}
 
           {user?.role === 'admin' && (
             <>
@@ -65,7 +65,6 @@ export default function Layout() {
               </div>
               {adminItems.map((item) => (
                 <Link key={item.path} to={item.path} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive(item.path) ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}>
-                  <span>{item.icon}</span>
                   {item.label}
                 </Link>
               ))}

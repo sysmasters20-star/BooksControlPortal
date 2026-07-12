@@ -18,8 +18,9 @@ for (const varName of requiredEnvVars) {
 const app = express();
 
 app.use(helmet());
+const allowedOrigins = env.frontendUrl.split(',').map((s) => s.trim()).filter(Boolean);
 app.use(cors({
-  origin: env.frontendUrl,
+  origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
 }));

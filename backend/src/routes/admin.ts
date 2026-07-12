@@ -19,4 +19,8 @@ router.put('/bookshops/:id', validate(schemas.updateBookshop), auditLog('update_
 router.delete('/bookshops/:id', auditLog('delete_bookshop', 'bookshop'), asyncHandler(adminController.deleteBookshop));
 router.get('/bookshops/:id/analytics', asyncHandler(adminController.getBookshopAnalytics));
 
+router.get('/users', asyncHandler(adminController.listUsers));
+router.patch('/users/:id', auditLog('update_user', 'user'), asyncHandler(adminController.updateUserStatus));
+router.delete('/users/:id', auditLog('delete_user', 'user'), asyncHandler(adminController.deleteUser));
+
 export default router;

@@ -101,6 +101,41 @@ const migrations = [
   `CREATE INDEX IF NOT EXISTS idx_print_jobs_bookshop_id ON print_jobs(bookshop_id)`,
 
   `ALTER TABLE books DROP COLUMN IF EXISTS bookshop_id`,
+
+  `CREATE TABLE IF NOT EXISTS print_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id UUID REFERENCES print_sessions(id) ON DELETE CASCADE,
+    token VARCHAR(100) UNIQUE NOT NULL,
+    book_id UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    bookshop_id UUID REFERENCES bookshops(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id),
+    purpose VARCHAR(20) NOT NULL DEFAULT 'view' CHECK (purpose IN ('view', 'print')),
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_print_tokens_token ON print_tokens(token)`,
+
+  `CREATE OR REPLACE FUNCTION update_updated_at_column()
+   RETURNS TRIGGER AS $$
+   BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+   $$ LANGUAGE plpgsql`,
+
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_updated_at_users') THEN
+      CREATE TRIGGER set_updated_at_users BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_updated_at_bookshops') THEN
+      CREATE TRIGGER set_updated_at_bookshops BEFORE UPDATE ON bookshops FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_updated_at_books') THEN
+      CREATE TRIGGER set_updated_at_books BEFORE UPDATE ON books FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_updated_at_print_jobs') THEN
+      CREATE TRIGGER set_updated_at_print_jobs BEFORE UPDATE ON print_jobs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+  END $$`,
 ];
 
 export async function runMigrations() {

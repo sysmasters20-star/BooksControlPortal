@@ -4,15 +4,24 @@ import { query } from '../database/connection.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 export async function listBookshops(req: Request, res: Response) {
+  const { page: pageStr, limit: limitStr } = req.query;
+  const page = Math.max(1, parseInt(pageStr as string, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(limitStr as string, 10) || 50));
+  const offset = (page - 1) * limit;
+
+  const countResult = await query('SELECT COUNT(*)::int FROM bookshops');
+  const total = parseInt(countResult.rows[0]?.count || '0');
+
   const result = await query(
     `SELECT bs.*, u.email as owner_email, u.name as owner_name,
             (SELECT COUNT(*) FROM book_access ba WHERE ba.bookshop_id = bs.id) as assigned_books,
             (SELECT COALESCE(SUM(ps.copies), 0) FROM print_sessions ps WHERE ps.bookshop_id = bs.id) as total_prints
      FROM bookshops bs
      LEFT JOIN users u ON u.id = bs.owner_id
-     ORDER BY bs.name`,
+     ORDER BY bs.name LIMIT $1 OFFSET $2`,
+    [limit, offset],
   );
-  res.json({ bookshops: result.rows });
+  res.json({ bookshops: result.rows, total, page, limit, totalPages: Math.ceil(total / limit) });
 }
 
 export async function getBookshop(req: Request, res: Response) {
@@ -174,28 +183,77 @@ export async function getPlatformStats(req: Request, res: Response) {
 }
 
 export async function getAuditLogs(req: Request, res: Response) {
-  const { action, userId, resourceType, limit = '100' } = req.query;
-  let sql = `SELECT al.*, u.email as user_email, u.name as user_name
-             FROM audit_logs al
-             LEFT JOIN users u ON u.id = al.user_id WHERE 1=1`;
+  const { action, userId, resourceType, page: pageStr, limit: limitStr } = req.query;
+  const page = Math.max(1, parseInt(pageStr as string, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(limitStr as string, 10) || 50));
+  const offset = (page - 1) * limit;
+
   const params: unknown[] = [];
+  const conditions: string[] = [];
+  let paramIdx = 0;
 
-  if (action) {
-    params.push(action);
-    sql += ` AND al.action = $${params.length}`;
-  }
-  if (userId) {
-    params.push(userId);
-    sql += ` AND al.user_id = $${params.length}`;
-  }
-  if (resourceType) {
-    params.push(resourceType);
-    sql += ` AND al.resource_type = $${params.length}`;
+  const join = ' FROM audit_logs al LEFT JOIN users u ON u.id = al.user_id';
+
+  if (action) { paramIdx++; params.push(action); conditions.push(`al.action = $${paramIdx}`); }
+  if (userId) { paramIdx++; params.push(userId); conditions.push(`al.user_id = $${paramIdx}`); }
+  if (resourceType) { paramIdx++; params.push(resourceType); conditions.push(`al.resource_type = $${paramIdx}`); }
+
+  const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+  const countResult = await query(`SELECT COUNT(*)::int${join}${where}`, params);
+  const total = parseInt(countResult.rows[0]?.count || '0');
+  paramIdx++; params.push(limit);
+  paramIdx++; params.push(offset);
+
+  const result = await query(
+    `SELECT al.*, u.email as user_email, u.name as user_name${join}${where}
+     ORDER BY al.created_at DESC LIMIT $${paramIdx - 1} OFFSET $${paramIdx}`,
+    params,
+  );
+  res.json({ auditLogs: result.rows, total, page, limit, totalPages: Math.ceil(total / limit) });
+}
+
+export async function listUsers(req: Request, res: Response) {
+  const { page: pageStr, limit: limitStr } = req.query;
+  const page = Math.max(1, parseInt(pageStr as string, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(limitStr as string, 10) || 50));
+  const offset = (page - 1) * limit;
+
+  const countResult = await query('SELECT COUNT(*)::int FROM users');
+  const total = parseInt(countResult.rows[0]?.count || '0');
+
+  const result = await query(
+    `SELECT id, email, name, role, is_verified, created_at, updated_at
+     FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+    [limit, offset],
+  );
+  res.json({ users: result.rows, total, page, limit, totalPages: Math.ceil(total / limit) });
+}
+
+export async function updateUserStatus(req: Request, res: Response) {
+  const { id } = req.params;
+  const { is_verified } = req.body;
+
+  if (typeof is_verified !== 'boolean') {
+    throw new AppError(400, 'is_verified must be a boolean');
   }
 
-  sql += ' ORDER BY al.created_at DESC LIMIT $' + (params.length + 1);
-  params.push(parseInt(limit as string, 10));
+  const result = await query(
+    'UPDATE users SET is_verified = $1 WHERE id = $2 RETURNING id, email, name, role, is_verified',
+    [is_verified, id],
+  );
 
-  const result = await query(sql, params);
-  res.json({ auditLogs: result.rows });
+  if (result.rows.length === 0) {
+    throw new AppError(404, 'User not found');
+  }
+
+  res.json({ user: result.rows[0] });
+}
+
+export async function deleteUser(req: Request, res: Response) {
+  const { id } = req.params;
+  const result = await query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
+  if (result.rows.length === 0) {
+    throw new AppError(404, 'User not found');
+  }
+  res.status(204).send();
 }

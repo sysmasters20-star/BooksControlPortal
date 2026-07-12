@@ -13,6 +13,7 @@ import AdminBookshops from './pages/admin/Bookshops';
 import AdminBookshopDetail from './pages/admin/BookshopDetail';
 import AdminBooks from './pages/admin/Books';
 import AdminAuditLogs from './pages/admin/AuditLogs';
+import AdminUsers from './pages/admin/Users';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('accessToken');
@@ -46,6 +47,7 @@ export default function App() {
         <Route path="admin/bookshops/:id" element={<AdminRoute><AdminBookshopDetail /></AdminRoute>} />
         <Route path="admin/books" element={<AdminRoute><AdminBooks /></AdminRoute>} />
         <Route path="admin/audit" element={<AdminRoute><AdminAuditLogs /></AdminRoute>} />
+        <Route path="admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
       </Route>
     </Routes>
   );

@@ -7,3 +7,19 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+@media print {
+  body > *:not(.print-notice) { display: none; }
+  .print-notice::after {
+    content: 'CONTROLLED PRINT - Watermarked by BooksControl Portal';
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-30deg);
+    font-size: 48px;
+    color: rgba(0,0,0,0.08);
+    font-weight: bold;
+    pointer-events: none;
+    z-index: 999999;
+  }
+}

@@ -5,48 +5,50 @@ import { AppError } from '../middleware/errorHandler.js';
 import { encrypt } from '../utils/encryption.js';
 
 export async function list(req: Request, res: Response) {
-  const { status, search } = req.query;
+  const { status, search, page: pageStr, limit: limitStr } = req.query;
   const userId = req.user!.userId;
   const role = req.user!.role;
+  const page = Math.max(1, parseInt(pageStr as string, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(limitStr as string, 10) || 50));
+  const offset = (page - 1) * limit;
 
-  let sql: string;
   const params: unknown[] = [];
+  const conditions: string[] = [];
+  let paramIdx = 0;
 
   if (role === 'admin') {
-    sql = `SELECT b.id, b.title, b.author, b.isbn, b.file_size, b.pages, b.status, b.created_at,
-           (SELECT COUNT(*) FROM book_access ba WHERE ba.book_id = b.id) as shop_count
-           FROM books b WHERE 1=1`;
-    if (status) {
-      params.push(status);
-      sql += ` AND b.status = $${params.length}`;
-    }
-    if (search) {
-      params.push(`%${search}%`);
-      sql += ` AND (b.title ILIKE $${params.length} OR b.author ILIKE $${params.length})`;
-    }
-    sql += ' ORDER BY b.created_at DESC';
-  } else {
-    sql = `SELECT b.id, b.title, b.author, b.isbn, b.file_size, b.pages, b.status, b.created_at
-           FROM books b
-           INNER JOIN book_access ba ON ba.book_id = b.id
-           INNER JOIN bookshops bs ON bs.id = ba.bookshop_id
-           WHERE bs.owner_id = $1`;
-    if (status) {
-      params.push(status);
-      sql += ` AND b.status = $${params.length}`;
-    }
-    if (search) {
-      params.push(`%${search}%`);
-      sql += ` AND (b.title ILIKE $${params.length} OR b.author ILIKE $${params.length})`;
-    }
-    sql += ' ORDER BY b.created_at DESC';
-    params.unshift(userId);
-    sql = sql.replace('$1', '$1');
-    params[0] = userId;
+    if (status) { paramIdx++; params.push(status); conditions.push(`b.status = $${paramIdx}`); }
+    if (search) { paramIdx++; params.push(`%${search}%`); conditions.push(`(b.title ILIKE $${paramIdx} OR b.author ILIKE $${paramIdx})`); }
+    const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+    const countResult = await query(`SELECT COUNT(*)::int FROM books b${where}`, params);
+    const total = parseInt(countResult.rows[0]?.count || '0');
+    paramIdx++; params.push(limit);
+    paramIdx++; params.push(offset);
+    const result = await query(
+      `SELECT b.id, b.title, b.author, b.isbn, b.file_size, b.pages, b.status, b.created_at,
+              (SELECT COUNT(*) FROM book_access ba WHERE ba.book_id = b.id) as shop_count
+       FROM books b${where} ORDER BY b.created_at DESC LIMIT $${paramIdx - 1} OFFSET $${paramIdx}`,
+      params,
+    );
+    res.json({ books: result.rows, total, page, limit, totalPages: Math.ceil(total / limit) });
+    return;
   }
 
-  const result = await query(sql, params);
-  res.json({ books: result.rows });
+  paramIdx++; params.push(userId);
+  conditions.push(`bs.owner_id = $${paramIdx}`);
+  if (status) { paramIdx++; params.push(status); conditions.push(`b.status = $${paramIdx}`); }
+  if (search) { paramIdx++; params.push(`%${search}%`); conditions.push(`(b.title ILIKE $${paramIdx} OR b.author ILIKE $${paramIdx})`); }
+  const where = ' WHERE ' + conditions.join(' AND ');
+  const join = ' FROM books b INNER JOIN book_access ba ON ba.book_id = b.id INNER JOIN bookshops bs ON bs.id = ba.bookshop_id';
+  const countResult = await query(`SELECT COUNT(*)::int${join}${where}`, params);
+  const total = parseInt(countResult.rows[0]?.count || '0');
+  paramIdx++; params.push(limit);
+  paramIdx++; params.push(offset);
+  const result = await query(
+    `SELECT b.id, b.title, b.author, b.isbn, b.file_size, b.pages, b.status, b.created_at${join}${where} ORDER BY b.created_at DESC LIMIT $${paramIdx - 1} OFFSET $${paramIdx}`,
+    params,
+  );
+  res.json({ books: result.rows, total, page, limit, totalPages: Math.ceil(total / limit) });
 }
 
 export async function getById(req: Request, res: Response) {
@@ -85,13 +87,21 @@ export async function getById(req: Request, res: Response) {
 }
 
 export async function create(req: Request, res: Response) {
-  const { title, author, isbn, pages } = req.body;
+  const { title, author, isbn } = req.body;
+
+  let pageCount: number | null = null;
+
+  if (req.file) {
+    const { PDFDocument } = await import('pdf-lib');
+    const doc = await PDFDocument.load(req.file.buffer);
+    pageCount = doc.getPageCount();
+  }
 
   const result = await query(
     `INSERT INTO books (title, author, isbn, pages, uploaded_by, status)
      VALUES ($1, $2, $3, $4, $5, 'pending')
      RETURNING id, title, author, isbn, pages, status, created_at`,
-    [title, author, isbn || null, pages || null, req.user!.userId],
+    [title, author, isbn || null, pageCount, req.user!.userId],
   );
 
   const book = result.rows[0];
@@ -100,12 +110,13 @@ export async function create(req: Request, res: Response) {
     const fileHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
     const { iv, data: encrypted } = encrypt(req.file.buffer);
     await query(
-      `UPDATE books SET file_data = $1, file_size = $2, file_hash = $3, encryption_iv = $4, updated_at = NOW()
-       WHERE id = $5`,
-      [encrypted, req.file.size, fileHash, iv, book.id],
+      `UPDATE books SET file_data = $1, file_size = $2, file_hash = $3, encryption_iv = $4, pages = $5, updated_at = NOW()
+       WHERE id = $6`,
+      [encrypted, req.file.size, fileHash, iv, pageCount, book.id],
     );
     book.file_size = req.file.size;
     book.file_hash = fileHash;
+    book.pages = pageCount;
   }
 
   res.status(201).json({ book });
@@ -144,13 +155,17 @@ export async function uploadFile(req: Request, res: Response) {
     throw new AppError(404, 'Book not found');
   }
 
+  const { PDFDocument } = await import('pdf-lib');
+  const doc = await PDFDocument.load(req.file.buffer);
+  const pageCount = doc.getPageCount();
+
   const fileHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
   const { iv, data: encrypted } = encrypt(req.file.buffer);
 
   const result = await query(
-    `UPDATE books SET file_data = $1, file_size = $2, file_hash = $3, encryption_iv = $4, updated_at = NOW()
-     WHERE id = $5 RETURNING id, file_size, file_hash`,
-    [encrypted, req.file.size, fileHash, iv, id],
+    `UPDATE books SET file_data = $1, file_size = $2, file_hash = $3, encryption_iv = $4, pages = $5, updated_at = NOW()
+     WHERE id = $6 RETURNING id, file_size, file_hash, pages`,
+    [encrypted, req.file.size, fileHash, iv, pageCount, id],
   );
 
   res.json({ book: result.rows[0] });

@@ -5,32 +5,34 @@ import { AppError } from '../middleware/errorHandler.js';
 import { decrypt } from '../utils/encryption.js';
 
 export async function listJobs(req: Request, res: Response) {
-  const { bookshop_id, status } = req.query;
+  const { bookshop_id, status, page: pageStr, limit: limitStr } = req.query;
   const userId = req.user!.userId;
   const role = req.user!.role;
+  const page = Math.max(1, parseInt(pageStr as string, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(limitStr as string, 10) || 50));
+  const offset = (page - 1) * limit;
 
-  let sql = `SELECT pj.*, b.title as book_title
-             FROM print_jobs pj
-             LEFT JOIN books b ON b.id = pj.book_id
-             WHERE 1=1`;
   const params: unknown[] = [];
+  const conditions: string[] = [];
+  let paramIdx = 0;
 
-  if (role !== 'admin') {
-    params.push(userId);
-    sql += ` AND pj.requested_by = $${params.length}`;
-  }
-  if (bookshop_id) {
-    params.push(bookshop_id);
-    sql += ` AND pj.bookshop_id = $${params.length}`;
-  }
-  if (status) {
-    params.push(status);
-    sql += ` AND pj.status = $${params.length}`;
-  }
+  if (role !== 'admin') { paramIdx++; params.push(userId); conditions.push(`pj.requested_by = $${paramIdx}`); }
+  if (bookshop_id) { paramIdx++; params.push(bookshop_id); conditions.push(`pj.bookshop_id = $${paramIdx}`); }
+  if (status) { paramIdx++; params.push(status); conditions.push(`pj.status = $${paramIdx}`); }
 
-  sql += ' ORDER BY pj.created_at DESC';
-  const result = await query(sql, params);
-  res.json({ printJobs: result.rows });
+  const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+  const join = ' FROM print_jobs pj LEFT JOIN books b ON b.id = pj.book_id';
+
+  const countResult = await query(`SELECT COUNT(*)::int${join}${where}`, params);
+  const total = parseInt(countResult.rows[0]?.count || '0');
+  paramIdx++; params.push(limit);
+  paramIdx++; params.push(offset);
+
+  const result = await query(
+    `SELECT pj.*, b.title as book_title${join}${where} ORDER BY pj.created_at DESC LIMIT $${paramIdx - 1} OFFSET $${paramIdx}`,
+    params,
+  );
+  res.json({ printJobs: result.rows, total, page, limit, totalPages: Math.ceil(total / limit) });
 }
 
 export async function createJob(req: Request, res: Response) {
@@ -161,6 +163,12 @@ export async function viewWatermarked(req: Request, res: Response) {
     'Content-Disposition': `inline; filename="${book.rows[0].title}-watermarked.pdf"`,
     'X-Session-Id': sessionToken,
     'Content-Length': watermarkedPdf.length.toString(),
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'SAMEORIGIN',
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'self'",
   });
   res.send(Buffer.from(watermarkedPdf));
 }
@@ -224,38 +232,48 @@ export async function countPrint(req: Request, res: Response) {
     [bookId, bookshopId, userId, copies, 'Auto-created from print session'],
   );
 
-  res.status(201).json({ session: result.rows[0] });
+  const printToken = crypto.randomBytes(24).toString('hex');
+  const tenMinutesFromNow = new Date(Date.now() + 10 * 60 * 1000);
+  await query(
+    `INSERT INTO print_tokens (session_id, token, book_id, bookshop_id, user_id, purpose, expires_at)
+     VALUES ($1, $2, $3, $4, $5, 'print', $6)`,
+    [result.rows[0].id, printToken, bookId, bookshopId, userId, tenMinutesFromNow],
+  );
+
+  res.status(201).json({ session: result.rows[0], print_token: printToken, token_expires_at: tenMinutesFromNow });
 }
 
 export async function listSessions(req: Request, res: Response) {
   const userId = req.user!.userId;
   const role = req.user!.role;
-  const { book_id, bookshop_id, limit = '50' } = req.query;
+  const { book_id, bookshop_id, page: pageStr, limit: limitStr } = req.query;
+  const page = Math.max(1, parseInt(pageStr as string, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(limitStr as string, 10) || 50));
+  const offset = (page - 1) * limit;
 
-  let sql = `SELECT ps.*, b.title as book_title, bs.name as bookshop_name, u.name as user_name
-             FROM print_sessions ps
-             LEFT JOIN books b ON b.id = ps.book_id
-             LEFT JOIN bookshops bs ON bs.id = ps.bookshop_id
-             LEFT JOIN users u ON u.id = ps.user_id
-             WHERE 1=1`;
   const params: unknown[] = [];
+  const conditions: string[] = [];
+  let paramIdx = 0;
 
-  if (role !== 'admin') {
-    params.push(userId);
-    sql += ` AND (ps.user_id = $${params.length} OR bs.owner_id = $${params.length})`;
-  }
-  if (book_id) {
-    params.push(book_id);
-    sql += ` AND ps.book_id = $${params.length}`;
-  }
-  if (bookshop_id) {
-    params.push(bookshop_id);
-    sql += ` AND ps.bookshop_id = $${params.length}`;
-  }
+  const join = ` FROM print_sessions ps
+    LEFT JOIN books b ON b.id = ps.book_id
+    LEFT JOIN bookshops bs ON bs.id = ps.bookshop_id
+    LEFT JOIN users u ON u.id = ps.user_id`;
 
-  sql += ' ORDER BY ps.created_at DESC LIMIT $' + (params.length + 1);
-  params.push(parseInt(limit as string, 10));
+  if (role !== 'admin') { paramIdx++; params.push(userId); conditions.push(`(ps.user_id = $${paramIdx} OR bs.owner_id = $${paramIdx})`); }
+  if (book_id) { paramIdx++; params.push(book_id); conditions.push(`ps.book_id = $${paramIdx}`); }
+  if (bookshop_id) { paramIdx++; params.push(bookshop_id); conditions.push(`ps.bookshop_id = $${paramIdx}`); }
 
-  const result = await query(sql, params);
-  res.json({ sessions: result.rows });
+  const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+  const countResult = await query(`SELECT COUNT(*)::int${join}${where}`, params);
+  const total = parseInt(countResult.rows[0]?.count || '0');
+  paramIdx++; params.push(limit);
+  paramIdx++; params.push(offset);
+
+  const result = await query(
+    `SELECT ps.*, b.title as book_title, bs.name as bookshop_name, u.name as user_name${join}${where}
+     ORDER BY ps.created_at DESC LIMIT $${paramIdx - 1} OFFSET $${paramIdx}`,
+    params,
+  );
+  res.json({ sessions: result.rows, total, page, limit, totalPages: Math.ceil(total / limit) });
 }
