@@ -121,14 +121,15 @@ export async function viewWatermarked(req: Request, res: Response) {
     bookshopName = shopResult.rows[0].name;
   }
 
-  if (!bookshopId) bookshopId = '00000000-0000-0000-0000-000000000000';
-
-  const sessionToken = crypto.randomBytes(16).toString('hex');
-  await query(
-    `INSERT INTO print_sessions (book_id, bookshop_id, user_id, copies, session_token)
-     VALUES ($1, $2, $3, 0, $4)`,
-    [bookId, bookshopId, userId, sessionToken],
-  );
+  let sessionToken = 'preview';
+  if (bookshopId) {
+    sessionToken = crypto.randomBytes(16).toString('hex');
+    await query(
+      `INSERT INTO print_sessions (book_id, bookshop_id, user_id, copies, session_token)
+       VALUES ($1, $2, $3, 0, $4)`,
+      [bookId, bookshopId, userId, sessionToken],
+    );
+  }
 
   let pdfBuffer: Buffer;
   try {
