@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { printApi } from '../api/print';
 
@@ -8,10 +8,12 @@ export default function PrintViewer() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showPrintDialog, setShowPrintDialog] = useState(false);
   const [copies, setCopies] = useState(1);
   const [printing, setPrinting] = useState(false);
   const [printMsg, setPrintMsg] = useState('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const pdfUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -26,6 +28,7 @@ export default function PrintViewer() {
         const blob = response.data as Blob;
         const url = URL.createObjectURL(blob);
         setPdfUrl(url);
+        pdfUrlRef.current = url;
       })
       .catch((err) => {
         setError(err.response?.data?.message || 'Failed to load PDF');
@@ -33,28 +36,47 @@ export default function PrintViewer() {
       .finally(() => setLoading(false));
 
     return () => {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
     };
   }, [id]);
 
-  const handlePrint = async () => {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey && ['s', 'S'].includes(e.key)) || e.key === 'F12' || (e.ctrlKey && e.shiftKey && ['i', 'I', 'j', 'J'].includes(e.key))) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handlePrintClick = () => {
+    if (!id) return;
+    setShowPrintDialog(true);
+    setPrintMsg('');
+  };
+
+  const handleConfirmPrint = useCallback(async () => {
     if (!id) return;
     setPrinting(true);
     setPrintMsg('');
+    setShowPrintDialog(false);
     try {
       const { data } = await printApi.countPrint(id, { copies });
-      setPrintMsg(`Session logged: ${data.session.copies} copy/copies`);
+      setPrintMsg(`Print session logged: ${data.session.copies} copy/copies`);
+      if (iframeRef.current) {
+        iframeRef.current.contentWindow?.print();
+      }
     } catch (err: unknown) {
-      setPrintMsg((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Print recording failed');
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Print recording failed';
+      setPrintMsg(msg);
     } finally {
       setPrinting(false);
     }
-  };
+  }, [id, copies]);
 
-  const handleBrowserPrint = () => {
-    if (iframeRef.current) {
-      iframeRef.current.contentWindow?.print();
-    }
+  const handleCancelPrint = () => {
+    setShowPrintDialog(false);
   };
 
   return (
@@ -65,13 +87,8 @@ export default function PrintViewer() {
           <h1 className="text-lg font-bold text-gray-900 mt-1">Secure PDF Viewer</h1>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600">Copies:</label>
-            <input type="number" min={1} max={1000} value={copies} onChange={(e) => setCopies(Number(e.target.value))} className="w-16 px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
-          </div>
-          <button onClick={handleBrowserPrint} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors">Print</button>
-          <button onClick={handlePrint} disabled={printing} className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
-            {printing ? 'Logging...' : 'Log Print'}
+          <button onClick={handlePrintClick} disabled={printing || !pdfUrl} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
+            {printing ? 'Recording...' : 'Print'}
           </button>
         </div>
       </div>
@@ -104,15 +121,43 @@ export default function PrintViewer() {
           <iframe
             ref={iframeRef}
             src={pdfUrl}
-            className="w-full h-full pointer-events-none"
+            className="w-full h-full"
             title="Secure PDF Viewer"
             sandbox="allow-scripts allow-same-origin allow-forms"
           />
         )}
       </div>
 
-      {/* Overlay to block screenshot tools */}
-      <div className="fixed inset-0 pointer-events-none opacity-0" style={{ zIndex: 9999 }} />
+      {showPrintDialog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={handleCancelPrint}>
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Confirm Print</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              This action will be recorded. Watermarks will appear on every page.
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Number of copies</label>
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                value={copies}
+                onChange={(e) => setCopies(Math.max(1, Math.min(1000, Number(e.target.value))))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={handleCancelPrint} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleConfirmPrint} className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors">
+                Confirm & Print
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

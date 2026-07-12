@@ -65,12 +65,6 @@ export default function Login() {
           </p>
         </div>
 
-        <div className="text-center mt-4">
-          <p className="text-xs text-gray-400">
-            Admin: admin@bookprint.com / Admin@123456<br />
-            Bookshop: bookshop@demo.com / Shop@123456
-          </p>
-        </div>
       </div>
     </div>
   );

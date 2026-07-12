@@ -7,6 +7,14 @@ import { logger } from './utils/logger.js';
 import pool from './database/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
+const requiredEnvVars = ['DATABASE_URL', 'JWT_SECRET', 'JWT_REFRESH_SECRET', 'ENCRYPTION_MASTER_KEY'] as const;
+for (const varName of requiredEnvVars) {
+  if (!process.env[varName]) {
+    logger.error(`Missing required environment variable: ${varName}`);
+    process.exit(1);
+  }
+}
+
 const app = express();
 
 app.use(helmet());

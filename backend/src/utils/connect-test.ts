@@ -1,6 +1,10 @@
 import pg from 'pg';
 
-const url = process.env.DATABASE_URL || 'postgresql://postgres:tTRJmAGuBkLaWtvVDiyNJDDYdVKhaDNF@tokaido.proxy.rlwy.net:25733/railway';
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL environment variable is required');
+}
+
+const url = process.env.DATABASE_URL;
 
 async function main() {
   console.log('Connecting to:', url.replace(/\/\/.*@/, '//USER:PASS@'));
