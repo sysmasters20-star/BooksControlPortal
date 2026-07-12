@@ -11,4 +11,8 @@ router.get('/', authenticate, asyncHandler(printController.listJobs));
 router.post('/', authenticate, validate(schemas.createPrintJob), auditLog('create_print_job', 'print_job'), asyncHandler(printController.createJob));
 router.patch('/:id/status', authenticate, authorize('admin'), validate(schemas.updatePrintStatus), auditLog('update_print_job', 'print_job'), asyncHandler(printController.updateJobStatus));
 
+router.get('/sessions', authenticate, asyncHandler(printController.listSessions));
+router.get('/:bookId/view', authenticate, asyncHandler(printController.viewWatermarked));
+router.post('/:bookId/print', authenticate, validate(schemas.countPrint), auditLog('print_book', 'book'), asyncHandler(printController.countPrint));
+
 export default router;

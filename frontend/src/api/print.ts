@@ -5,4 +5,9 @@ export const printApi = {
   createJob: (data: { book_id: string; bookshop_id?: string; copies?: number; notes?: string }) =>
     api.post('/print', data),
   updateStatus: (id: string, status: string) => api.patch(`/print/${id}/status`, { status }),
+  viewWatermarked: (bookId: string, params?: Record<string, string>) =>
+    api.get(`/print/${bookId}/view`, { params, responseType: 'blob' }),
+  countPrint: (bookId: string, data: { copies: number; bookshop_id?: string }) =>
+    api.post(`/print/${bookId}/print`, data),
+  listSessions: (params?: Record<string, string>) => api.get('/print/sessions', { params }),
 };

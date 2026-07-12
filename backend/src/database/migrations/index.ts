@@ -37,12 +37,29 @@ const migrations = [
     file_size BIGINT,
     file_hash VARCHAR(64),
     pages INTEGER,
-    bookshop_id UUID REFERENCES bookshops(id) ON DELETE CASCADE,
     uploaded_by UUID REFERENCES users(id),
     status VARCHAR(50) DEFAULT 'pending',
     encryption_iv BYTEA,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS book_access (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    book_id UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    bookshop_id UUID NOT NULL REFERENCES bookshops(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(book_id, bookshop_id)
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS print_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    book_id UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    bookshop_id UUID NOT NULL REFERENCES bookshops(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id),
+    copies INTEGER NOT NULL DEFAULT 1,
+    session_token VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
   )`,
 
   `CREATE TABLE IF NOT EXISTS print_jobs (
@@ -72,9 +89,18 @@ const migrations = [
   `CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action)`,
   `CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_books_bookshop_id ON books(bookshop_id)`,
   `CREATE INDEX IF NOT EXISTS idx_books_status ON books(status)`,
+
+  `CREATE INDEX IF NOT EXISTS idx_book_access_book_id ON book_access(book_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_book_access_bookshop_id ON book_access(bookshop_id)`,
+
+  `CREATE INDEX IF NOT EXISTS idx_print_sessions_bookshop_id ON print_sessions(bookshop_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_print_sessions_book_id ON print_sessions(book_id)`,
+
   `CREATE INDEX IF NOT EXISTS idx_print_jobs_status ON print_jobs(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_print_jobs_bookshop_id ON print_jobs(bookshop_id)`,
+
+  `ALTER TABLE books DROP COLUMN IF EXISTS bookshop_id`,
 ];
 
 export async function runMigrations() {

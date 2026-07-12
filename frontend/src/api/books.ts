@@ -5,7 +5,6 @@ export interface BookData {
   author?: string;
   isbn?: string;
   pages?: number;
-  bookshop_id?: string;
 }
 
 export const booksApi = {
@@ -14,4 +13,7 @@ export const booksApi = {
   create: (data: BookData) => api.post('/books', data),
   updateStatus: (id: string, status: string) => api.patch(`/books/${id}/status`, { status }),
   remove: (id: string) => api.delete(`/books/${id}`),
+  assignShop: (id: string, bookshopId: string) => api.post(`/books/${id}/assign`, { bookshop_id: bookshopId }),
+  unassignShop: (id: string, bookshopId: string) => api.delete(`/books/${id}/assign/${bookshopId}`),
+  listShops: (id: string) => api.get(`/books/${id}/shops`),
 };

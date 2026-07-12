@@ -46,10 +46,12 @@ app.get('/api/health', async (_req, res) => {
 import authRoutes from './routes/auth.js';
 import bookRoutes from './routes/books.js';
 import printRoutes from './routes/print.js';
+import adminRoutes from './routes/admin.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/books', bookRoutes);
 app.use('/api/print', printRoutes);
+app.use('/api/admin', adminRoutes);
 
 import path from 'path';
 import { fileURLToPath } from 'url';

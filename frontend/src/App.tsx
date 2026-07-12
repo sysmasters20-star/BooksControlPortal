@@ -5,12 +5,26 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Books from './pages/Books';
 import BookDetail from './pages/BookDetail';
+import PrintViewer from './pages/PrintViewer';
 import PrintJobs from './pages/PrintJobs';
-import Admin from './pages/Admin';
+import PrintSessions from './pages/PrintSessions';
+import AdminDashboard from './pages/admin/Dashboard';
+import AdminBookshops from './pages/admin/Bookshops';
+import AdminBookshopDetail from './pages/admin/BookshopDetail';
+import AdminBooks from './pages/admin/Books';
+import AdminAuditLogs from './pages/admin/AuditLogs';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('accessToken');
   if (!token) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const token = localStorage.getItem('accessToken');
+  const role = localStorage.getItem('userRole');
+  if (!token) return <Navigate to="/login" replace />;
+  if (role !== 'admin') return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -24,8 +38,14 @@ export default function App() {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="books" element={<Books />} />
         <Route path="books/:id" element={<BookDetail />} />
+        <Route path="print/:id" element={<PrintViewer />} />
         <Route path="print-jobs" element={<PrintJobs />} />
-        <Route path="admin" element={<Admin />} />
+        <Route path="print-sessions" element={<PrintSessions />} />
+        <Route path="admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+        <Route path="admin/bookshops" element={<AdminRoute><AdminBookshops /></AdminRoute>} />
+        <Route path="admin/bookshops/:id" element={<AdminRoute><AdminBookshopDetail /></AdminRoute>} />
+        <Route path="admin/books" element={<AdminRoute><AdminBooks /></AdminRoute>} />
+        <Route path="admin/audit" element={<AdminRoute><AdminAuditLogs /></AdminRoute>} />
       </Route>
     </Routes>
   );

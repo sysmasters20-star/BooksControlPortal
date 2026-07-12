@@ -33,12 +33,28 @@ export interface Book {
   file_size?: number;
   file_hash?: string;
   pages?: number;
-  bookshop_id?: string;
   uploaded_by?: string;
   status: 'pending' | 'approved' | 'rejected' | 'archived';
   encryption_iv?: Buffer;
   created_at: Date;
   updated_at: Date;
+}
+
+export interface BookAccess {
+  id: string;
+  book_id: string;
+  bookshop_id: string;
+  created_at: Date;
+}
+
+export interface PrintSession {
+  id: string;
+  book_id: string;
+  bookshop_id: string;
+  user_id?: string;
+  copies: number;
+  session_token: string;
+  created_at: Date;
 }
 
 export interface PrintJob {

@@ -30,11 +30,14 @@ export const schemas = {
     author: Joi.string().max(255).optional().allow(''),
     isbn: Joi.string().max(20).optional().allow(''),
     pages: Joi.number().integer().min(1).optional(),
-    bookshop_id: Joi.string().uuid().optional(),
   }),
 
   updateBookStatus: Joi.object({
     status: Joi.string().valid('pending', 'approved', 'rejected', 'archived').required(),
+  }),
+
+  assignBookshop: Joi.object({
+    bookshop_id: Joi.string().uuid().required(),
   }),
 
   createPrintJob: Joi.object({
@@ -48,7 +51,30 @@ export const schemas = {
     status: Joi.string().valid('pending', 'printing', 'completed', 'cancelled').required(),
   }),
 
+  countPrint: Joi.object({
+    copies: Joi.number().integer().min(1).max(1000).default(1),
+    bookshop_id: Joi.string().uuid().optional(),
+  }),
+
   refreshToken: Joi.object({
     refreshToken: Joi.string().required(),
+  }),
+
+  createBookshop: Joi.object({
+    name: Joi.string().min(1).max(255).required(),
+    email: Joi.string().email().optional().allow(''),
+    phone: Joi.string().max(50).optional().allow(''),
+    address: Joi.string().optional().allow(''),
+    owner_name: Joi.string().max(255).optional().allow(''),
+    owner_email: Joi.string().email().optional().allow(''),
+    owner_password: Joi.string().min(6).optional().allow(''),
+  }),
+
+  updateBookshop: Joi.object({
+    name: Joi.string().min(1).max(255).optional(),
+    email: Joi.string().email().optional().allow(''),
+    phone: Joi.string().max(50).optional().allow(''),
+    address: Joi.string().optional().allow(''),
+    is_active: Joi.boolean().optional(),
   }),
 };

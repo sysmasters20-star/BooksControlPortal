@@ -18,6 +18,35 @@ export async function runSeeds() {
     logger.info('Admin user created');
   }
 
+  const shopEmail = 'bookshop@demo.com';
+  const existingShop = await pool.query('SELECT id FROM users WHERE email = $1', [shopEmail]);
+
+  let shopOwnerId: string | null = null;
+  if (existingShop.rows.length === 0) {
+    const passwordHash = await bcrypt.hash('Shop@123456', 12);
+    const userRes = await pool.query(
+      `INSERT INTO users (email, password_hash, name, role, is_verified)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [shopEmail, passwordHash, 'Demo Bookshop', 'bookshop_owner', true],
+    );
+    shopOwnerId = userRes.rows[0].id;
+    logger.info('Demo bookshop owner created');
+  } else {
+    shopOwnerId = existingShop.rows[0].id;
+  }
+
+  if (shopOwnerId) {
+    const existingBookshop = await pool.query('SELECT id FROM bookshops WHERE email = $1', [shopEmail]);
+    if (existingBookshop.rows.length === 0) {
+      await pool.query(
+        `INSERT INTO bookshops (name, owner_id, address, phone, email, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        ['Demo Bookshop', shopOwnerId, '123 Main St, City', '+20123456789', shopEmail, true],
+      );
+      logger.info('Demo bookshop created');
+    }
+  }
+
   logger.info('Seeds completed successfully');
 }
 
