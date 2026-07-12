@@ -12,6 +12,7 @@ router.post('/', authenticate, validate(schemas.createPrintJob), auditLog('creat
 router.patch('/:id/status', authenticate, authorize('admin'), validate(schemas.updatePrintStatus), auditLog('update_print_job', 'print_job'), asyncHandler(printController.updateJobStatus));
 
 router.get('/sessions', authenticate, asyncHandler(printController.listSessions));
+router.post('/sessions/log', authenticate, asyncHandler(printController.logPrintSession));
 router.get('/:bookId/view', authenticate, asyncHandler(printController.viewWatermarked));
 router.get('/:bookId/page/:pageNum', authenticate, asyncHandler(printController.getPage));
 router.get('/:bookId/session-pdf', authenticate, asyncHandler(printController.getSessionPdf));

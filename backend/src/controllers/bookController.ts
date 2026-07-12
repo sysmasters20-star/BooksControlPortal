@@ -59,3 +59,22 @@ export async function getStats(req: Request, res: Response) {
   const stats = await bookService.getBookStats(req.user!.userId, req.user!.role);
   res.json({ stats });
 }
+
+export async function listPageFiles(req: Request, res: Response) {
+  const { AppError } = await import('../middleware/errorHandler.js');
+  const book = await bookService.getBookById(req.params.id, req.user!.userId, req.user!.role);
+  const files = await bookService.listBookPageFiles(book.id);
+  res.json({ files });
+}
+
+export async function getFile(req: Request, res: Response) {
+  const { buffer, mimeType } = await bookService.getBookFile(req.params.id);
+  res.set({
+    'Content-Type': mimeType,
+    'Content-Disposition': 'inline; filename="secure_file"',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+  });
+  res.send(buffer);
+}

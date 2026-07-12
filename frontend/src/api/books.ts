@@ -18,4 +18,7 @@ export const booksApi = {
   assignShop: (id: string, bookshopId: string) => api.post(`/books/${id}/assign`, { bookshop_id: bookshopId }),
   unassignShop: (id: string, bookshopId: string) => api.delete(`/books/${id}/assign/${bookshopId}`),
   listShops: (id: string) => api.get(`/books/${id}/shops`),
+  listPageFiles: (id: string) => api.get(`/books/${id}/files`),
+  getFile: (id: string) => api.get(`/books/files/${id}`, { responseType: 'blob' }),
+  logPrintSession: (data: { book_id: string; copies: number }) => api.post('/print/sessions/log', data),
 };

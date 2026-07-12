@@ -1,7 +1,8 @@
 import crypto from 'crypto';
-import { query } from '../database/connection.js';
+import { query, getClient } from '../database/connection.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { encrypt } from '../utils/encryption.js';
+import { pdfToPageBuffers } from './pdfPageRenderer.js';
 
 export async function listBooks(filters: Record<string, any>, userId: string, role: string) {
   const { status, search, page: pageStr, limit: limitStr } = filters;
@@ -78,6 +79,36 @@ export async function getBookById(bookId: string, userId: string, role: string) 
   return { ...result.rows[0], shops: shops.rows };
 }
 
+async function storeBookFiles(bookId: string, pdfBuffer: Buffer): Promise<void> {
+  const pageBuffers = await pdfToPageBuffers(pdfBuffer);
+
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    await client.query(
+      `INSERT INTO book_files (book_id, file_data, mime_type, page_number)
+       VALUES ($1, $2, 'application/pdf', NULL)`,
+      [bookId, pdfBuffer],
+    );
+
+    for (let i = 0; i < pageBuffers.length; i++) {
+      await client.query(
+        `INSERT INTO book_files (book_id, file_data, mime_type, page_number)
+         VALUES ($1, $2, 'image/png', $3)`,
+        [bookId, pageBuffers[i], i + 1],
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function createBook(data: { title: string; author?: string; isbn?: string }, file: Express.Multer.File | undefined, userId: string) {
   const { title, author, isbn } = data;
 
@@ -109,6 +140,8 @@ export async function createBook(data: { title: string; author?: string; isbn?: 
     book.file_size = file.size;
     book.file_hash = fileHash;
     book.pages = pageCount;
+
+    await storeBookFiles(book.id, file.buffer);
   }
 
   return book;
@@ -173,7 +206,48 @@ export async function uploadBookFile(bookId: string, file: Express.Multer.File) 
     [encrypted, file.size, fileHash, iv, pageCount, bookId],
   );
 
+  await query('DELETE FROM book_files WHERE book_id = $1', [bookId]);
+  await storeBookFiles(bookId, file.buffer);
+
   return result.rows[0];
+}
+
+export async function listBookPageFiles(bookId: string) {
+  const result = await query(
+    `SELECT id, page_number, mime_type FROM book_files
+     WHERE book_id = $1 AND mime_type = 'image/png'
+     ORDER BY page_number ASC`,
+    [bookId],
+  );
+  return result.rows;
+}
+
+export async function getBookFile(fileId: string) {
+  const result = await query(
+    `SELECT file_data, mime_type FROM book_files WHERE id = $1`,
+    [fileId],
+  );
+
+  if (result.rows.length === 0) {
+    throw new AppError(404, 'File not found');
+  }
+
+  const row = result.rows[0];
+  let fileBuffer: Buffer;
+
+  if (typeof row.file_data === 'string' && row.file_data.startsWith('\\x')) {
+    fileBuffer = Buffer.from(row.file_data.substring(2), 'hex');
+  } else if (Buffer.isBuffer(row.file_data)) {
+    fileBuffer = row.file_data;
+  } else if (typeof row.file_data === 'string') {
+    fileBuffer = Buffer.from(row.file_data, 'hex');
+  } else if (row.file_data?.data) {
+    fileBuffer = Buffer.from(row.file_data.data);
+  } else {
+    fileBuffer = row.file_data;
+  }
+
+  return { buffer: fileBuffer, mimeType: row.mime_type };
 }
 
 export async function deleteBook(bookId: string) {

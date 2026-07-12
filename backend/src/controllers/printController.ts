@@ -454,6 +454,36 @@ export async function getSessionPdf(req: Request, res: Response) {
   res.send(watermarkedPdf);
 }
 
+export async function logPrintSession(req: Request, res: Response) {
+  const { book_id, copies = 1 } = req.body;
+  const userId = req.user!.userId;
+  const role = req.user!.role;
+
+  const book = await query('SELECT id FROM books WHERE id = $1', [book_id]);
+  if (book.rows.length === 0) {
+    throw new AppError(404, 'Book not found');
+  }
+
+  let bookshopId: string | null = null;
+  if (role !== 'admin') {
+    const shopResult = await query('SELECT id FROM bookshops WHERE owner_id = $1', [userId]);
+    if (shopResult.rows.length > 0) {
+      bookshopId = shopResult.rows[0].id;
+    }
+  } else {
+    bookshopId = (req.body.bookshop_id as string) || null;
+  }
+
+  const sessionToken = crypto.randomBytes(16).toString('hex');
+  const result = await query(
+    `INSERT INTO print_sessions (book_id, bookshop_id, user_id, copies, session_token, created_at)
+     VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING *`,
+    [book_id, bookshopId, userId, copies, sessionToken],
+  );
+
+  res.status(201).json({ session: result.rows[0] });
+}
+
 export async function listSessions(req: Request, res: Response) {
   const userId = req.user!.userId;
   const role = req.user!.role;

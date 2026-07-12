@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { adminApi } from '../../api/admin';
 import PrintChart from '../../components/PrintChart';
+import Toast from '../../components/Toast';
 
 interface Analytics {
   total_sessions: number;
@@ -18,6 +19,9 @@ export default function AdminBookshopDetail() {
   const [shopName, setShopName] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [invoiceMonth, setInvoiceMonth] = useState(new Date().toISOString().substring(0, 7));
+  const [generating, setGenerating] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const loadAnalytics = () => {
     if (!id) return;
@@ -47,6 +51,25 @@ export default function AdminBookshopDetail() {
     document.body.removeChild(link);
   };
 
+  const handleGenerateInvoice = async () => {
+    if (!id) return;
+    setGenerating(true);
+    try {
+      const year = invoiceMonth.substring(0, 4);
+      const month = invoiceMonth.substring(5, 7);
+      const periodStart = `${year}-${month}-01`;
+      const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+      const periodEnd = `${year}-${month}-${lastDay}`;
+      const { data } = await adminApi.generateInvoice(id, periodStart, periodEnd);
+      setToast({ message: `Invoice generated: $${data.invoice.total_amount} for ${data.items.length} books`, type: 'success' });
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to generate invoice';
+      setToast({ message: msg, type: 'error' });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   if (!analytics) return <div className="flex items-center justify-center py-20"><div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full" /></div>;
 
   const lineData = {
@@ -59,6 +82,7 @@ export default function AdminBookshopDetail() {
 
   return (
     <div>
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <button onClick={() => navigate('/admin/bookshops')} className="text-sm text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-1">&larr; Back to Bookshops</button>
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -127,6 +151,17 @@ export default function AdminBookshopDetail() {
             </div>
           ) : <p className="text-sm text-gray-400">No recent sessions</p>}
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-6 mt-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Generate Monthly Invoice</h3>
+        <div className="flex items-center gap-3">
+          <input type="month" value={invoiceMonth} onChange={(e) => setInvoiceMonth(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+          <button onClick={handleGenerateInvoice} disabled={generating} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
+            {generating ? 'Generating...' : 'Generate Invoice'}
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 mt-2">Generates an invoice for all print sessions in the selected month.</p>
       </div>
     </div>
   );

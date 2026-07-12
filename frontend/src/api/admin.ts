@@ -15,4 +15,6 @@ export const adminApi = {
   exportPrintSessions: (params?: Record<string, string>) => api.get('/admin/export/print-sessions', { params, responseType: 'blob' }),
   listNotifications: (params?: Record<string, string>) => api.get('/admin/notifications', { params }),
   markNotificationRead: (id: string) => api.patch(`/admin/notifications/${id}/read`),
+  generateInvoice: (bookshopId: string, periodStart: string, periodEnd: string) =>
+    api.post('/admin/finance/invoices/generate', { bookshop_id: bookshopId, period_start: periodStart, period_end: periodEnd }),
 };

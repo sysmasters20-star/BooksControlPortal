@@ -11,6 +11,7 @@
     "axios": "^1.0.0",
     "chart.js": "^4.5.1",
     "pdfjs-dist": "^4.0.379",
+    "print-js": "^1.6.0",
     "react": "^19.0.0",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.0.0",
