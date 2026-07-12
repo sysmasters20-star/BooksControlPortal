@@ -50,18 +50,27 @@ export default function PrintViewer() {
     const handleCopy = (e: ClipboardEvent) => e.preventDefault();
     const handleCut = (e: ClipboardEvent) => e.preventDefault();
     const handleSelectStart = (e: Event) => e.preventDefault();
+    const handleWheel = (e: WheelEvent) => e.preventDefault();
+    const handleTouchStart = (e: TouchEvent) => e.preventDefault();
+    const handleTouchMove = (e: TouchEvent) => e.preventDefault();
 
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('contextmenu', handleContextMenu);
     document.addEventListener('copy', handleCopy);
     document.addEventListener('cut', handleCut);
     document.addEventListener('selectstart', handleSelectStart);
+    document.addEventListener('wheel', handleWheel, { passive: false });
+    document.addEventListener('touchstart', handleTouchStart, { passive: false });
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('copy', handleCopy);
       document.removeEventListener('cut', handleCut);
       document.removeEventListener('selectstart', handleSelectStart);
+      document.removeEventListener('wheel', handleWheel);
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchmove', handleTouchMove);
     };
   }, []);
 

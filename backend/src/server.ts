@@ -102,8 +102,25 @@ app.use('/api/admin/finance', financeRoutes);
 
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const frontendDist = path.resolve(__dirname, '../../frontend/dist');
+
+const possiblePaths = [
+  path.resolve(__dirname, '../../frontend/dist'),
+  path.resolve(__dirname, '../../../frontend/dist'),
+  path.resolve(process.cwd(), 'frontend/dist'),
+];
+
+let frontendDist = possiblePaths[0];
+for (const p of possiblePaths) {
+  if (fs.existsSync(path.join(p, 'index.html'))) {
+    frontendDist = p;
+    break;
+  }
+}
+
+logger.info(`Serving frontend from: ${frontendDist}`);
+logger.info(`Assets exist: ${fs.existsSync(path.join(frontendDist, 'assets'))}`);
 
 app.use(express.static(frontendDist, {
   setHeaders: (res, filePath) => {
