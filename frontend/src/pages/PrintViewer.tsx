@@ -16,7 +16,12 @@ export default function PrintViewer() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    printApi.viewWatermarked(id)
+    const params: Record<string, string> = {};
+    const role = localStorage.getItem('userRole');
+    if (role === 'admin') {
+      params.bookshop_id = prompt('Enter Bookshop ID (optional):') || '';
+    }
+    printApi.viewWatermarked(id, params)
       .then((response) => {
         const blob = response.data as Blob;
         const url = URL.createObjectURL(blob);
@@ -38,7 +43,7 @@ export default function PrintViewer() {
     setPrintMsg('');
     try {
       const { data } = await printApi.countPrint(id, { copies });
-      setPrintMsg(`Session logged: ${data.session.copies} copy/copies (Session: ${data.session.session_token?.substring(0, 8)}...)`);
+      setPrintMsg(`Session logged: ${data.session.copies} copy/copies`);
     } catch (err: unknown) {
       setPrintMsg((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Print recording failed');
     } finally {
@@ -53,11 +58,11 @@ export default function PrintViewer() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)]">
+    <div className="flex flex-col h-[calc(100vh-8rem)] select-none" onContextMenu={(e) => e.preventDefault()}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div>
           <button onClick={() => navigate(-1)} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">&larr; Back</button>
-          <h1 className="text-lg font-bold text-gray-900 mt-1">PDF Viewer</h1>
+          <h1 className="text-lg font-bold text-gray-900 mt-1">Secure PDF Viewer</h1>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
@@ -72,7 +77,7 @@ export default function PrintViewer() {
       </div>
 
       {printMsg && (
-        <div className={`mb-4 px-4 py-2 rounded-lg text-sm ${printMsg.includes('failed') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+        <div className={`mb-4 px-4 py-2 rounded-lg text-sm ${printMsg.includes('failed') || printMsg.includes('blocked') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
           {printMsg}
         </div>
       )}
@@ -89,15 +94,25 @@ export default function PrintViewer() {
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
             <div className="text-center px-6">
-              <p className="text-red-600 font-medium mb-1">Error</p>
+              <p className="text-red-600 font-medium mb-1">Unable to load PDF</p>
               <p className="text-sm text-gray-500">{error}</p>
+              <p className="text-xs text-gray-400 mt-2">Make sure the book has a PDF uploaded and you have access.</p>
             </div>
           </div>
         )}
         {pdfUrl && (
-          <iframe ref={iframeRef} src={pdfUrl} className="w-full h-full" title="PDF Viewer" />
+          <iframe
+            ref={iframeRef}
+            src={pdfUrl}
+            className="w-full h-full pointer-events-none"
+            title="Secure PDF Viewer"
+            sandbox="allow-scripts allow-same-origin allow-forms"
+          />
         )}
       </div>
+
+      {/* Overlay to block screenshot tools */}
+      <div className="fixed inset-0 pointer-events-none opacity-0" style={{ zIndex: 9999 }} />
     </div>
   );
 }

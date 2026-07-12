@@ -99,12 +99,17 @@ export async function viewWatermarked(req: Request, res: Response) {
   }
 
   let bookshopId: string | null = null;
+  let bookshopName = 'Administrator';
 
   if (role === 'admin') {
     bookshopId = (req.query.bookshop_id as string) || null;
+    if (bookshopId) {
+      const sr = await query('SELECT name FROM bookshops WHERE id = $1', [bookshopId]);
+      bookshopName = sr.rows[0]?.name || 'Admin';
+    }
   } else {
     const shopResult = await query(
-      `SELECT bs.id FROM bookshops bs
+      `SELECT bs.id, bs.name FROM bookshops bs
        INNER JOIN book_access ba ON ba.bookshop_id = bs.id
        WHERE ba.book_id = $1 AND bs.owner_id = $2`,
       [bookId, userId],
@@ -113,14 +118,10 @@ export async function viewWatermarked(req: Request, res: Response) {
       throw new AppError(403, 'No access to this book');
     }
     bookshopId = shopResult.rows[0].id;
+    bookshopName = shopResult.rows[0].name;
   }
 
-  if (!bookshopId) {
-    throw new AppError(400, 'Bookshop identification required');
-  }
-
-  const shopResult = await query('SELECT name FROM bookshops WHERE id = $1', [bookshopId]);
-  const bookshopName = shopResult.rows[0]?.name || 'Unknown';
+  if (!bookshopId) bookshopId = '00000000-0000-0000-0000-000000000000';
 
   const sessionToken = crypto.randomBytes(16).toString('hex');
   await query(

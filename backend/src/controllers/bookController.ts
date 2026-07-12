@@ -94,7 +94,21 @@ export async function create(req: Request, res: Response) {
     [title, author, isbn || null, pages || null, req.user!.userId],
   );
 
-  res.status(201).json({ book: result.rows[0] });
+  const book = result.rows[0];
+
+  if (req.file) {
+    const fileHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+    const { iv, data: encrypted } = encrypt(req.file.buffer);
+    await query(
+      `UPDATE books SET file_data = $1, file_size = $2, file_hash = $3, encryption_iv = $4, updated_at = NOW()
+       WHERE id = $5`,
+      [encrypted, req.file.size, fileHash, iv, book.id],
+    );
+    book.file_size = req.file.size;
+    book.file_hash = fileHash;
+  }
+
+  res.status(201).json({ book });
 }
 
 export async function updateStatus(req: Request, res: Response) {

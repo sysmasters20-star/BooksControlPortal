@@ -10,9 +10,10 @@ interface Book {
 export default function Books() {
   const [books, setBooks] = useState<Book[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<BookData>({ title: '', author: '', isbn: '' });
+  const [form, setForm] = useState<BookData & { file: File | null }>({ title: '', author: '', isbn: '', file: null });
   const [filterStatus, setFilterStatus] = useState('');
   const [search, setSearch] = useState('');
+  const [creating, setCreating] = useState(false);
   const role = localStorage.getItem('userRole');
 
   const loadBooks = () => {
@@ -26,9 +27,23 @@ export default function Books() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    await booksApi.create(form);
-    setForm({ title: '', author: '', isbn: '' });
+    setCreating(true);
+    const fd = new FormData();
+    fd.append('title', form.title);
+    if (form.author) fd.append('author', form.author);
+    if (form.isbn) fd.append('isbn', form.isbn);
+    if (form.file) fd.append('file', form.file);
+    try {
+      const token = localStorage.getItem('accessToken');
+      await fetch('/api/books', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+    } catch { /* handled */ }
+    setForm({ title: '', author: '', isbn: '', file: null });
     setShowForm(false);
+    setCreating(false);
     loadBooks();
   };
 
@@ -70,7 +85,7 @@ export default function Books() {
       {showForm && (
         <form onSubmit={handleCreate} className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">New Book</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
               <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
@@ -83,8 +98,14 @@ export default function Books() {
               <label className="block text-sm font-medium text-gray-700 mb-1">ISBN</label>
               <input value={form.isbn || ''} onChange={(e) => setForm({ ...form, isbn: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">PDF File</label>
+              <input type="file" accept=".pdf" onChange={(e) => setForm({ ...form, file: e.target.files?.[0] || null })} className="w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100" />
+            </div>
           </div>
-          <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors">Create Book</button>
+          <button type="submit" disabled={creating} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
+            {creating ? 'Creating...' : 'Create Book'}
+          </button>
         </form>
       )}
 
