@@ -6,6 +6,7 @@ import { env } from './config/env.js';
 import { logger } from './utils/logger.js';
 import pool from './database/connection.js';
 import { runMigrations } from './database/migrations/index.js';
+import { runSeeds } from './database/seeds/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const requiredEnvVars = ['DATABASE_URL', 'JWT_SECRET', 'JWT_REFRESH_SECRET', 'ENCRYPTION_MASTER_KEY'] as const;
@@ -144,6 +145,7 @@ app.use('/api/admin/finance', financeRoutes);
 app.use(errorHandler);
 
 await runMigrations();
+await runSeeds();
 
 const server = app.listen(env.port, () => {
   logger.info(`Server running on port ${env.port} in ${env.nodeEnv} mode`);

@@ -11,7 +11,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState({ total_books: 0, total_print_jobs: 0, total_sessions: 0, total_copies: 0 });
 
   useEffect(() => {
-    authApi.me().then(({ data }) => setUser(data.user)).catch(() => {});
+    authApi.me().then(({ data }) => { if (data?.user) setUser(data.user); }).catch(() => {});
     booksApi.getStats().then(({ data }) => { if (data?.stats) setStats(data.stats); }).catch(() => {});
   }, []);
 
@@ -25,8 +25,8 @@ export default function Dashboard() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Welcome, {user?.name}</h1>
-        <p className="text-gray-500 mt-1">{user?.email} &middot; <span className="capitalize">{user?.role === 'admin' ? 'Administrator' : 'Bookshop Owner'}</span></p>
+        <h1 className="text-2xl font-bold text-gray-900">Welcome, {user?.name || user?.email || 'User'}</h1>
+        <p className="text-gray-500 mt-1">{user?.email || ''}{user?.email ? ' · ' : ''}<span className="capitalize">{user?.role === 'admin' ? 'Administrator' : 'Bookshop Owner'}</span></p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
