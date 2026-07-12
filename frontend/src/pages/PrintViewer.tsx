@@ -17,36 +17,21 @@ function getAuthHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
 
-async function fetchAsBase64(url: string): Promise<string> {
-  const response = await fetch(url, { headers: getAuthHeaders() });
-  const blob = await response.blob();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-const PRINT_BLOCKER_ID = 'print-blocker';
-const PRINT_FRAME_ID = 'print-frame';
-
-function injectPrintBlocker() {
-  const existing = document.getElementById(PRINT_BLOCKER_ID);
-  if (existing) existing.remove();
-  const style = document.createElement('style');
-  style.id = PRINT_BLOCKER_ID;
-  style.textContent = `@media print { html { display: none !important; } }`;
-  document.documentElement.appendChild(style);
-}
-
-function removePrintBlocker() {
-  document.getElementById(PRINT_BLOCKER_ID)?.remove();
-}
-
-function cleanupFrame(iframe: HTMLIFrameElement) {
-  if (document.body.contains(iframe)) document.body.removeChild(iframe);
-  removePrintBlocker();
+async function fetchAsBase64(url: string, signal?: AbortSignal): Promise<string | null> {
+  try {
+    const response = await fetch(url, { headers: getAuthHeaders(), signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    console.warn('Image fetch failed:', (err as Error).message);
+    return null;
+  }
 }
 
 export default function SecureBookViewer() {
@@ -57,8 +42,7 @@ export default function SecureBookViewer() {
   const [pages, setPages] = useState<PageFile[]>([]);
   const [showPrintDialog, setShowPrintDialog] = useState(false);
   const [copies, setCopies] = useState(1);
-  const [printing, setPrinting] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
   const [printMsg, setPrintMsg] = useState('');
 
   useEffect(() => {
@@ -114,164 +98,145 @@ export default function SecureBookViewer() {
 
   const handleConfirmPrint = useCallback(async () => {
     if (!id) return;
-    setPrinting(true);
-    setIsProcessing(true);
-    setPrintMsg('');
+    setIsPrinting(true);
+    setPrintMsg('Initializing print...');
     setShowPrintDialog(false);
+
+    const abortController = new AbortController();
+
     try {
       const safeCopies = Math.max(1, Math.min(10, copies));
       const { data } = await booksApi.logPrintSession({ book_id: id, copies: safeCopies });
       const bookshopName: string = data.bookshop_name || 'Unknown';
-      const now = new Date();
-      const dateStr = now.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      const dateOnly = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-      const watermarkText = `CONFIDENTIAL - ${bookshopName} - ${dateStr} - DO NOT DISTRIBUTE`;
 
       setPrintMsg('Fetching pages...');
       const rawUrls = pages.map(p => getTokenUrl(p.id));
-      const results = await Promise.allSettled(rawUrls.map(fetchAsBase64));
-      const base64Images: string[] = [];
-      results.forEach((r, i) => {
-        if (r.status === 'fulfilled') {
-          base64Images.push(r.value);
-        } else {
-          console.warn(`Page ${i + 1} skipped — failed to convert:`, r.reason);
+      const results = await Promise.allSettled(
+        rawUrls.map(url => fetchAsBase64(url, abortController.signal))
+      );
+      const validImages: string[] = [];
+      results.forEach((r) => {
+        if (r.status === 'fulfilled' && r.value !== null) {
+          validImages.push(r.value);
         }
       });
 
-      if (base64Images.length === 0) {
+      if (validImages.length === 0) {
         throw new Error('Failed to load any pages. Please try again.');
       }
 
-      setPrintMsg('Preparing secure print...');
+      setPrintMsg('Preparing print pages...');
+
+      const now = new Date();
+      const dateStr = now.toLocaleString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      });
+      const watermarkText = `CONFIDENTIAL - ${bookshopName} - ${dateStr} - DO NOT DISTRIBUTE`;
 
       let pagesHTML = '';
       for (let c = 0; c < safeCopies; c++) {
-        for (const base64 of base64Images) {
+        validImages.forEach((base64) => {
           pagesHTML += `
-          <div class="page-container">
-            <img src="${base64}" class="page-image" />
-            <div class="watermark-grid">
-              <span class="wm wm-1">${watermarkText}</span>
-              <span class="wm wm-2">${watermarkText}</span>
-              <span class="wm wm-3">${watermarkText}</span>
-              <span class="wm wm-4">${watermarkText}</span>
-              <span class="wm wm-5">${watermarkText}</span>
-              <span class="wm wm-6">${watermarkText}</span>
-            </div>
-            <div class="red-border">UNAUTHORIZED COPY - ${bookshopName} - ${dateOnly}</div>
-          </div>`;
-        }
+    <div class="print-page">
+      <img src="${base64}" class="book-image" />
+      <div class="watermark-container">
+        <span class="watermark">${watermarkText}</span>
+        <span class="watermark">${watermarkText}</span>
+        <span class="watermark">${watermarkText}</span>
+      </div>
+    </div>`;
+        });
       }
-
-      const fullHtml = `<!DOCTYPE html>
-<html>
-<head>
-<style>
-  @page { margin: 0; size: A4; }
-  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: white !important; }
-  .page-container {
-    position: relative;
-    width: 210mm;
-    height: 297mm;
-    page-break-after: always;
-    overflow: hidden;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    border: 3px solid red;
-    box-sizing: border-box;
-  }
-  .page-container:last-child { page-break-after: auto; }
-  .page-image {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    opacity: 0.75;
-    user-select: none;
-  }
-  .watermark-grid {
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    pointer-events: none;
-    z-index: 9999;
-  }
-  .wm {
-    position: absolute;
-    font-size: 2.5rem;
-    font-weight: 900;
-    color: rgba(255, 0, 0, 0.35);
-    transform: rotate(-35deg);
-    white-space: nowrap;
-    user-select: none;
-    text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
-  }
-  .wm-1 { top: 10%; left: -10%; }
-  .wm-2 { top: 30%; left: 20%; }
-  .wm-3 { top: 50%; left: -5%; }
-  .wm-4 { top: 70%; left: 25%; }
-  .wm-5 { top: 20%; left: 50%; }
-  .wm-6 { top: 80%; left: 45%; }
-  .red-border {
-    position: absolute;
-    bottom: 5px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 0.9rem;
-    font-weight: bold;
-    color: red;
-    background: yellow;
-    padding: 2px 8px;
-    z-index: 10000;
-    white-space: nowrap;
-  }
-</style>
-</head>
-<body>${pagesHTML}</body>
-</html>`;
-
-      injectPrintBlocker();
 
       const iframe = document.createElement('iframe');
-      iframe.id = PRINT_FRAME_ID;
-      iframe.style.cssText = 'position:absolute;top:-9999px;left:-9999px;width:1px;height:1px;border:none;';
-      iframe.srcdoc = fullHtml;
+      iframe.style.position = 'absolute';
+      iframe.style.top = '-9999px';
+      iframe.style.left = '-9999px';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = 'none';
+      iframe.style.visibility = 'hidden';
       document.body.appendChild(iframe);
 
-      await new Promise<void>((resolve, reject) => {
-        iframe.onload = () => resolve();
-        iframe.onerror = () => reject(new Error('Print frame failed to load'));
-        setTimeout(() => resolve(), 15000);
-      });
+      const doc = iframe.contentDocument || iframe.contentWindow!.document;
+      doc.open();
+      doc.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Print Book</title>
+  <style>
+    @page { margin: 0; size: A4; }
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .print-page { page-break-after: always; }
+    }
+    body { margin: 0; padding: 0; background: white; }
+    .print-page {
+      width: 210mm;
+      height: 297mm;
+      position: relative;
+      overflow: hidden;
+      background: white;
+    }
+    .book-image {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .watermark-container {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      z-index: 9999;
+    }
+    .watermark {
+      position: absolute;
+      font-size: 3rem;
+      font-weight: 900;
+      color: rgba(255, 0, 0, 0.3);
+      white-space: nowrap;
+      transform: translate(-50%, -50%) rotate(-45deg);
+    }
+    .watermark:nth-child(1) { top: 20%; left: 10%; }
+    .watermark:nth-child(2) { top: 50%; left: 50%; }
+    .watermark:nth-child(3) { top: 80%; left: 20%; }
+  </style>
+</head>
+<body>${pagesHTML}</body>
+</html>`);
+      doc.close();
 
-      iframe.contentWindow!.focus();
+      iframe.onload = () => {
+        iframe.contentWindow!.focus();
 
-      try {
-        if (!iframe.contentWindow!.document.execCommand('print', false, undefined)) {
-          iframe.contentWindow!.print();
-        }
-      } catch {
-        iframe.contentWindow!.print();
-      }
+        setTimeout(() => {
+          try {
+            iframe.contentWindow!.print();
+          } catch (e) {
+            try {
+              (doc as any).execCommand('print', false, null);
+            } catch (e2) {
+              console.error('Print failed:', e2);
+              alert('Please use Ctrl+P to print manually');
+            }
+          }
+        }, 250);
+      };
 
-      setIsProcessing(false);
-      setPrintMsg('Print dialog opened. Please select a physical printer (USB/WiFi/Bluetooth). Saving as PDF is monitored and watermarked.');
+      setIsPrinting(false);
+      setPrintMsg('');
 
-      iframe.contentWindow!.addEventListener('afterprint', () => {
-        cleanupFrame(iframe);
-      });
       setTimeout(() => {
-        cleanupFrame(iframe);
-      }, 15000);
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 10000);
     } catch (err: unknown) {
-      setIsProcessing(false);
-      removePrintBlocker();
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Print failed';
+      setIsPrinting(false);
+      abortController.abort();
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || (err as Error).message || 'Print failed';
       setPrintMsg(msg);
-    } finally {
-      setPrinting(false);
     }
   }, [id, pages, copies]);
 
@@ -289,14 +254,14 @@ export default function SecureBookViewer() {
           {pages.length > 0 && <p className="text-xs text-gray-400 mt-0.5">{pages.length} page{pages.length > 1 ? 's' : ''}</p>}
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={handlePrintClick} disabled={printing || isProcessing || pages.length === 0} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
-            {printing ? 'Printing...' : 'Print Book'}
+          <button onClick={handlePrintClick} disabled={isPrinting || pages.length === 0} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
+            {isPrinting ? 'Processing...' : 'Print Book'}
           </button>
         </div>
       </div>
 
       {printMsg && (
-        <div className={`mb-4 px-4 py-2 rounded-lg text-sm print:hidden ${printMsg.includes('failed') || printMsg.includes('cancelled') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+        <div className={`mb-4 px-4 py-2 rounded-lg text-sm print:hidden ${printMsg.toLowerCase().includes('failed') || printMsg.toLowerCase().includes('error') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
           {printMsg}
         </div>
       )}
@@ -349,7 +314,7 @@ export default function SecureBookViewer() {
         )}
       </div>
 
-      {isProcessing && (
+      {isPrinting && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
           <div className="bg-white rounded-xl p-8 shadow-2xl mx-4 max-w-sm w-full">
             <div className="animate-spin w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full mx-auto mb-4" />
@@ -371,8 +336,8 @@ export default function SecureBookViewer() {
             </div>
             <div className="flex gap-3">
               <button onClick={handleCancelPrint} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">Cancel</button>
-              <button onClick={handleConfirmPrint} disabled={printing || isProcessing} className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
-                {printing ? 'Processing...' : 'Confirm & Print'}
+              <button onClick={handleConfirmPrint} disabled={isPrinting} className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
+                {isPrinting ? 'Processing...' : 'Confirm & Print'}
               </button>
             </div>
           </div>
