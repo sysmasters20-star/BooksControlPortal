@@ -14,6 +14,7 @@ router.patch('/:id/status', authenticate, authorize('admin'), validate(schemas.u
 router.get('/sessions', authenticate, asyncHandler(printController.listSessions));
 router.get('/:bookId/view', authenticate, asyncHandler(printController.viewWatermarked));
 router.get('/:bookId/page/:pageNum', authenticate, asyncHandler(printController.getPage));
+router.get('/:bookId/session-pdf', authenticate, asyncHandler(printController.getSessionPdf));
 router.post('/:bookId/generate-print-pdf', authenticate, asyncHandler(printController.generatePrintPdf));
 router.post('/:bookId/print', authenticate, validate(schemas.countPrint), auditLog('print_book', 'book'), asyncHandler(printController.countPrint));
 

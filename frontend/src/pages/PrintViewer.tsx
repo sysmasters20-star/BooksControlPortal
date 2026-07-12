@@ -1,6 +1,13 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { printApi } from '../api/print';
+
+const BLOCKED_KEYS = new Set([
+  'PrintScreen', 'F12',
+  'Insert', 'Delete',
+]);
+
+const CTRL_COMBOS = new Set(['p', 's', 'u', 'j', 'i', 'c', 'x', 'a']);
 
 export default function PrintViewer() {
   const { id } = useParams<{ id: string }>();
@@ -13,14 +20,11 @@ export default function PrintViewer() {
   const [copies, setCopies] = useState(1);
   const [printing, setPrinting] = useState(false);
   const [printMsg, setPrintMsg] = useState('');
-  const [totalPages, setTotalPages] = useState(0);
   const [bookshopName, setBookshopName] = useState('');
   const [sessionId, setSessionId] = useState('');
-  const [loadedPages, setLoadedPages] = useState<Record<number, string>>({});
-  const [loadingPages, setLoadingPages] = useState<Set<number>>(new Set());
-  const [metadataLoaded, setMetadataLoaded] = useState(false);
-  const [preparingPrint, setPreparingPrint] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [pdfUrl, setPdfUrl] = useState('');
+  const [pdfLoaded, setPdfLoaded] = useState(false);
+  const [screenshotWarning, setScreenshotWarning] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -28,6 +32,48 @@ export default function PrintViewer() {
     if (role === 'admin') { setShowShopDialog(true); return; }
     loadMetadata();
   }, [id]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'PrintScreen' || BLOCKED_KEYS.has(e.key)) {
+        e.preventDefault();
+        setScreenshotWarning(true);
+        setTimeout(() => setScreenshotWarning(false), 2000);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && CTRL_COMBOS.has(e.key.toLowerCase())) {
+        e.preventDefault();
+        setScreenshotWarning(true);
+        setTimeout(() => setScreenshotWarning(false), 2000);
+        return;
+      }
+    };
+    const handleContextMenu = (e: MouseEvent) => e.preventDefault();
+    const handleCopy = (e: ClipboardEvent) => e.preventDefault();
+    const handleCut = (e: ClipboardEvent) => e.preventDefault();
+    const handleSelectStart = (e: Event) => e.preventDefault();
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('copy', handleCopy);
+    document.addEventListener('cut', handleCut);
+    document.addEventListener('selectstart', handleSelectStart);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('copy', handleCopy);
+      document.removeEventListener('cut', handleCut);
+      document.removeEventListener('selectstart', handleSelectStart);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (printing) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [printing]);
 
   const loadMetadata = async (shopId?: string) => {
     if (!id) return;
@@ -37,10 +83,9 @@ export default function PrintViewer() {
       const params: Record<string, string> = {};
       if (shopId) params.bookshop_id = shopId;
       const { data } = await printApi.viewWatermarked(id, params);
-      setTotalPages(data.totalPages);
       setBookshopName(data.bookshopName);
       setSessionId(data.sessionId);
-      setMetadataLoaded(true);
+      await loadPdf(id, data.sessionId);
     } catch (err: unknown) {
       setError((err as { message?: string })?.message || 'Failed to load book');
     } finally {
@@ -48,49 +93,20 @@ export default function PrintViewer() {
     }
   };
 
-  const loadPage = async (pageNum: number) => {
-    if (!id || !sessionId || loadedPages[pageNum]) return;
-    setLoadingPages(prev => new Set(prev).add(pageNum));
+  const loadPdf = async (bookId: string, sessId: string) => {
     try {
-      const response = await printApi.getPage(id, pageNum, { sessionId });
-      const blobUrl = URL.createObjectURL(response.data as Blob);
-      setLoadedPages(prev => ({ ...prev, [pageNum]: blobUrl }));
+      const response = await printApi.getSessionPdf(bookId, sessId);
+      const blob = new Blob([response.data as BlobPart], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      setPdfUrl(url);
     } catch {
-      // silently fail for individual pages
-    } finally {
-      setLoadingPages(prev => {
-        const next = new Set(prev);
-        next.delete(pageNum);
-        return next;
-      });
+      setError('Failed to load PDF document');
     }
   };
 
   useEffect(() => {
-    if (!metadataLoaded || !totalPages) return;
-    const visiblePages = [1, 2, 3];
-    visiblePages.forEach(p => { if (p <= totalPages) loadPage(p); });
-  }, [metadataLoaded, totalPages]);
-
-  useEffect(() => {
-    if (!metadataLoaded || !totalPages) return;
-    const handleScroll = () => {
-      if (!containerRef.current) return;
-      const { scrollTop, clientHeight } = containerRef.current;
-      const pageHeight = 800;
-      const startPage = Math.max(1, Math.floor(scrollTop / pageHeight) - 1);
-      const endPage = Math.min(totalPages, Math.ceil((scrollTop + clientHeight) / pageHeight) + 2);
-      for (let i = startPage; i <= endPage; i++) {
-        if (!loadedPages[i] && !loadingPages.has(i)) {
-          loadPage(i);
-        }
-      }
-    };
-    const container = containerRef.current;
-    container?.addEventListener('scroll', handleScroll);
-    handleScroll();
-    return () => container?.removeEventListener('scroll', handleScroll);
-  }, [metadataLoaded, totalPages, loadedPages, loadingPages]);
+    return () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); };
+  }, [pdfUrl]);
 
   const handlePrintClick = () => {
     if (!id) return;
@@ -105,24 +121,21 @@ export default function PrintViewer() {
     setShowPrintDialog(false);
     try {
       const { data } = await printApi.countPrint(id, { copies, bookshop_id: bookshopId || undefined });
-      setPreparingPrint(true);
       setPrintMsg('Preparing print...');
       const printToken = data.print_token;
       const pdfResponse = await printApi.generatePrintPdf(id, { sessionId, copies, printToken });
-      const blob = new Blob([pdfResponse.data as Blob], { type: 'application/pdf' });
+      const blob = new Blob([pdfResponse.data as BlobPart], { type: 'application/pdf' });
       const blobUrl = URL.createObjectURL(blob);
       const printWindow = window.open(blobUrl, '_blank');
       if (printWindow) {
-        printWindow.onload = () => {
-          printWindow.print();
-        };
+        printWindow.onload = () => { printWindow.print(); };
       }
+      setPrintMsg('Print job sent successfully');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Print failed';
       setPrintMsg(msg);
     } finally {
       setPrinting(false);
-      setPreparingPrint(false);
     }
   }, [id, copies, bookshopId, sessionId]);
 
@@ -133,45 +146,43 @@ export default function PrintViewer() {
 
   const handleCancelPrint = () => setShowPrintDialog(false);
 
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (printing || preparingPrint) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [printing, preparingPrint]);
-
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] select-none" onContextMenu={(e) => e.preventDefault()}>
+    <div
+      className="flex flex-col h-[calc(100vh-8rem)] anti-capture"
+      onContextMenu={(e) => e.preventDefault()}
+      style={{ userSelect: 'none', WebkitUserSelect: 'none' } as React.CSSProperties}
+    >
+      {screenshotWarning && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-red-600 text-white text-center py-3 text-sm font-bold animate-pulse">
+          Screen capture is not allowed. This action has been logged.
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 print:hidden">
         <div>
           <button onClick={() => navigate(-1)} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">&larr; Back</button>
           <h1 className="text-lg font-bold text-gray-900 mt-1">Secure PDF Viewer</h1>
-          {totalPages > 0 && <p className="text-xs text-gray-400 mt-0.5">{totalPages} page{totalPages > 1 ? 's' : ''}</p>}
           {bookshopName && <p className="text-xs text-gray-400">Watermark: {bookshopName}</p>}
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={handlePrintClick} disabled={printing || preparingPrint || totalPages === 0} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
-            {preparingPrint ? 'Preparing...' : printing ? 'Recording...' : 'Print'}
+          <button onClick={handlePrintClick} disabled={printing || !pdfLoaded} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50">
+            {printing ? 'Printing...' : 'Print'}
           </button>
         </div>
       </div>
 
       {printMsg && (
-        <div className={`mb-4 px-4 py-2 rounded-lg text-sm print:hidden ${printMsg.includes('failed') || printMsg.includes('blocked') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+        <div className={`mb-4 px-4 py-2 rounded-lg text-sm print:hidden ${printMsg.includes('failed') || printMsg.includes('not allowed') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
           {printMsg}
         </div>
       )}
 
-      <div ref={containerRef} className="flex-1 bg-gray-100 rounded-xl border border-gray-200 overflow-y-auto relative">
+      <div className="flex-1 bg-gray-100 rounded-xl border border-gray-200 overflow-hidden relative">
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
             <div className="text-center">
               <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full mx-auto mb-2" />
-              <p className="text-sm text-gray-500">Loading watermarked book...</p>
+              <p className="text-sm text-gray-500">Loading secure document...</p>
             </div>
           </div>
         )}
@@ -184,28 +195,20 @@ export default function PrintViewer() {
             </div>
           </div>
         )}
-        {metadataLoaded && totalPages > 0 && (
-          <div className="flex flex-col items-center gap-4 py-6 px-4">
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
-              <div key={pageNum} className="w-full max-w-[800px] relative">
-                {!loadedPages[pageNum] && (
-                  <div className="w-full aspect-[3/4] bg-gray-200 rounded-lg flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="animate-spin w-6 h-6 border-4 border-primary-500 border-t-transparent rounded-full mx-auto mb-1" />
-                      <p className="text-xs text-gray-400">Loading page {pageNum}...</p>
-                    </div>
-                  </div>
-                )}
-                {loadedPages[pageNum] && (
-                  <img
-                    src={loadedPages[pageNum]}
-                    alt={`Page ${pageNum}`}
-                    className="w-full max-w-[800px] shadow-xl rounded-lg"
-                    draggable={false}
-                  />
-                )}
-              </div>
-            ))}
+        {pdfUrl && (
+          <iframe
+            src={pdfUrl}
+            className="w-full h-full border-0"
+            title="Secure PDF Viewer"
+            onLoad={() => setPdfLoaded(true)}
+            sandbox="allow-same-origin"
+            referrerPolicy="no-referrer"
+            style={{ pointerEvents: 'none' }}
+          />
+        )}
+        {!loading && !error && !pdfUrl && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <p className="text-sm text-gray-400">Preparing document...</p>
           </div>
         )}
       </div>

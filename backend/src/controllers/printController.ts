@@ -417,6 +417,43 @@ export async function countPrint(req: Request, res: Response) {
   res.status(201).json({ session: result.rows[0], print_token: printToken, token_expires_at: tenMinutesFromNow });
 }
 
+export async function getSessionPdf(req: Request, res: Response) {
+  const { bookId } = req.params;
+  const sessionId = req.query.sessionId as string;
+
+  if (!sessionId) {
+    throw new AppError(400, 'sessionId query parameter is required');
+  }
+
+  const cached = pdfCache.get(sessionId);
+  if (!cached) {
+    throw new AppError(404, 'Session not found or expired. Please request a new view token.');
+  }
+
+  const now = new Date().toISOString().split('T')[0];
+  const ip = req.ip || req.socket.remoteAddress;
+
+  const watermarkedPdf = await genPrintPdf(cached.pdfBuffer, {
+    bookshopName: cached.bookshopName,
+    sessionId,
+    copyNum: 1,
+    date: now,
+    ip,
+  }, 1);
+
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `inline; filename="${bookId}-session.pdf"`,
+    'Content-Length': watermarkedPdf.length.toString(),
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+  });
+  res.send(watermarkedPdf);
+}
+
 export async function listSessions(req: Request, res: Response) {
   const userId = req.user!.userId;
   const role = req.user!.role;

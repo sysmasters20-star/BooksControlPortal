@@ -68,6 +68,7 @@ const authLimiter = rateLimit({
 
 app.use('/api/print/:bookId/view', strictLimiter);
 app.use('/api/print/:bookId/page', strictLimiter);
+app.use('/api/print/:bookId/session-pdf', strictLimiter);
 app.use('/api/print/:bookId/generate-print-pdf', strictLimiter);
 app.use('/api/auth/login', authLimiter);
 

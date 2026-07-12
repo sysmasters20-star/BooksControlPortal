@@ -9,6 +9,8 @@ export const printApi = {
     api.get(`/print/${bookId}/view`, { params }),
   getPage: (bookId: string, pageNum: number, params?: Record<string, string>) =>
     api.get(`/print/${bookId}/page/${pageNum}`, { params, responseType: 'blob' }),
+  getSessionPdf: (bookId: string, sessionId: string) =>
+    api.get(`/print/${bookId}/session-pdf`, { params: { sessionId }, responseType: 'blob' }),
   generatePrintPdf: (bookId: string, data: { sessionId: string; copies: number; printToken: string }) =>
     api.post(`/print/${bookId}/generate-print-pdf`, data, { responseType: 'blob' }),
   countPrint: (bookId: string, data: { copies: number; bookshop_id?: string }) =>
