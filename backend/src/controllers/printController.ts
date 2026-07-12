@@ -113,10 +113,10 @@ export async function viewWatermarked(req: Request, res: Response) {
 
   if (printToken) {
     const tokenResult = await query(
-      `SELECT pt.*, ps.copies, ps.id as session_id, bs.name as bookshop_name, pt.bookshop_id
+      `SELECT pt.*, ps.copies, ps.id as session_id, COALESCE(bs.name, 'Administrator') as bookshop_name, pt.bookshop_id
        FROM print_tokens pt
        JOIN print_sessions ps ON ps.id = pt.session_id
-       JOIN bookshops bs ON bs.id = pt.bookshop_id
+       LEFT JOIN bookshops bs ON bs.id = pt.bookshop_id
        WHERE pt.token = $1`,
       [printToken],
     );
@@ -145,15 +145,31 @@ export async function viewWatermarked(req: Request, res: Response) {
   } else {
     const role = req.user!.role;
     if (role !== 'admin') {
-      throw new AppError(403, 'Access denied. Print token or admin privileges required.');
-    }
+      const shopResult = await query(
+        `SELECT id, name FROM bookshops WHERE owner_id = $1`,
+        [req.user!.userId],
+      );
+      if (shopResult.rows.length === 0) {
+        throw new AppError(403, 'No bookshop assigned to your account');
+      }
+      bookshopId = shopResult.rows[0].id;
+      bookshopName = shopResult.rows[0].name;
 
-    bookshopId = (req.query.bookshop_id as string) || '';
-    if (bookshopId) {
-      const sr = await query('SELECT name FROM bookshops WHERE id = $1', [bookshopId]);
-      bookshopName = sr.rows[0]?.name || 'Administrator';
+      const accessCheck = await query(
+        `SELECT 1 FROM book_access WHERE book_id = $1 AND bookshop_id = $2`,
+        [bookId, bookshopId],
+      );
+      if (accessCheck.rows.length === 0) {
+        throw new AppError(403, 'Your bookshop does not have access to this book');
+      }
     } else {
-      bookshopName = 'Administrator';
+      bookshopId = (req.query.bookshop_id as string) || '';
+      if (bookshopId) {
+        const sr = await query('SELECT name FROM bookshops WHERE id = $1', [bookshopId]);
+        bookshopName = sr.rows[0]?.name || 'Administrator';
+      } else {
+        bookshopName = 'Administrator';
+      }
     }
 
     const previewToken = crypto.randomBytes(16).toString('hex');
@@ -247,10 +263,10 @@ export async function generatePrintPdf(req: Request, res: Response) {
   }
 
   const tokenResult = await query(
-    `SELECT pt.*, ps.copies as session_copies, bs.name as bookshop_name
+    `SELECT pt.*, ps.copies as session_copies, COALESCE(bs.name, 'Administrator') as bookshop_name
      FROM print_tokens pt
      JOIN print_sessions ps ON ps.id = pt.session_id
-     JOIN bookshops bs ON bs.id = pt.bookshop_id
+     LEFT JOIN bookshops bs ON bs.id = pt.bookshop_id
      WHERE pt.token = $1`,
     [printToken],
   );
@@ -338,18 +354,24 @@ export async function countPrint(req: Request, res: Response) {
     bookshopId = (req.body.bookshop_id as string) || null;
   } else {
     const shopResult = await query(
-      `SELECT bs.id FROM bookshops bs
-       INNER JOIN book_access ba ON ba.bookshop_id = bs.id
-       WHERE ba.book_id = $1 AND bs.owner_id = $2`,
-      [bookId, userId],
+      `SELECT id FROM bookshops WHERE owner_id = $1`,
+      [userId],
     );
     if (shopResult.rows.length === 0) {
-      throw new AppError(403, 'No access to this book');
+      throw new AppError(403, 'No bookshop assigned to your account');
     }
     bookshopId = shopResult.rows[0].id;
+
+    const accessCheck = await query(
+      `SELECT 1 FROM book_access WHERE book_id = $1 AND bookshop_id = $2`,
+      [bookId, bookshopId],
+    );
+    if (accessCheck.rows.length === 0) {
+      throw new AppError(403, 'Your bookshop does not have access to this book');
+    }
   }
 
-  if (!bookshopId) {
+  if (!bookshopId && role !== 'admin') {
     throw new AppError(400, 'Bookshop identification required');
   }
 
