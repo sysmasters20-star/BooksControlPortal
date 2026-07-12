@@ -126,18 +126,21 @@ export default function PrintViewer() {
       const pdfResponse = await printApi.generatePrintPdf(id, { sessionId, copies, printToken });
       const blob = new Blob([pdfResponse.data as BlobPart], { type: 'application/pdf' });
       const blobUrl = URL.createObjectURL(blob);
-      const printWindow = window.open(blobUrl, '_blank');
-      if (printWindow) {
-        printWindow.onload = () => { printWindow.print(); };
-      }
-      setPrintMsg('Print job sent successfully');
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${bookshopName || 'book'}-print-${sessionId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      setPrintMsg('Print file downloaded. Open it in your PDF viewer to print.');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Print failed';
       setPrintMsg(msg);
     } finally {
       setPrinting(false);
     }
-  }, [id, copies, bookshopId, sessionId]);
+  }, [id, copies, bookshopId, sessionId, bookshopName]);
 
   const handleShopConfirm = () => {
     setShowShopDialog(false);
@@ -196,15 +199,36 @@ export default function PrintViewer() {
           </div>
         )}
         {pdfUrl && (
-          <iframe
-            src={pdfUrl}
-            className="w-full h-full border-0"
-            title="Secure PDF Viewer"
-            onLoad={() => setPdfLoaded(true)}
-            sandbox="allow-same-origin"
-            referrerPolicy="no-referrer"
-            style={{ pointerEvents: 'none' }}
-          />
+          <>
+            <iframe
+              src={pdfUrl}
+              className="w-full h-full border-0"
+              title="Secure PDF Viewer"
+              onLoad={() => setPdfLoaded(true)}
+              sandbox="allow-same-origin"
+              referrerPolicy="no-referrer"
+              style={{ pointerEvents: 'none', position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+            />
+            <div
+              className="absolute inset-0 z-10 anti-capture-overlay"
+              onContextMenu={(e) => e.preventDefault()}
+              onDoubleClick={(e) => e.preventDefault()}
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseUp={(e) => e.preventDefault()}
+              onMouseMove={(e) => e.preventDefault()}
+              onWheel={(e) => e.preventDefault()}
+              onTouchStart={(e) => e.preventDefault()}
+              onTouchEnd={(e) => e.preventDefault()}
+              onTouchMove={(e) => e.preventDefault()}
+              onDragStart={(e) => e.preventDefault()}
+              onDrop={(e) => e.preventDefault()}
+              onCopy={(e) => e.preventDefault()}
+              onCut={(e) => e.preventDefault()}
+              onPaste={(e) => e.preventDefault()}
+              onSelect={(e) => e.preventDefault()}
+              onFocus={(e) => e.preventDefault()}
+            />
+          </>
         )}
         {!loading && !error && !pdfUrl && (
           <div className="absolute inset-0 flex items-center justify-center">
