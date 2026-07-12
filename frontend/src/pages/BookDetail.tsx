@@ -215,7 +215,7 @@ export default function BookDetail() {
             </div>
             <div className="flex gap-2">
               <button onClick={handlePrint} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors">Submit Print Job</button>
-              <Link to={`/print/${id}`} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors">View PDF</Link>
+              <Link to={`/print/${id}`} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors">View Book</Link>
             </div>
           </div>
         )}
