@@ -24,7 +24,7 @@ export const env = {
 
   encryption: {
     key: process.env.ENCRYPTION_MASTER_KEY || '',
-    algorithm: (process.env.ENCRYPTION_ALGORITHM || 'aes-256-gcm') as 'aes-256-gcm',
+    algorithm: (process.env.ENCRYPTION_ALGORITHM || 'aes-256-cbc') as 'aes-256-cbc',
   },
 
   frontendUrl: process.env.NODE_ENV === 'production'

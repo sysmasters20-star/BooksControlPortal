@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { env } from '../config/env.js';
 
-const ALGORITHM = env.encryption.algorithm;
+const ALGORITHM: string = env.encryption.algorithm;
 const KEY = Buffer.from(env.encryption.key, 'base64');
 
 export function encrypt(buffer: Buffer): { iv: Buffer; data: Buffer } {
