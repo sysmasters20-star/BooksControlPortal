@@ -19,6 +19,11 @@ router.put('/bookshops/:id', validate(schemas.updateBookshop), auditLog('update_
 router.delete('/bookshops/:id', auditLog('delete_bookshop', 'bookshop'), asyncHandler(adminController.deleteBookshop));
 router.get('/bookshops/:id/analytics', asyncHandler(adminController.getBookshopAnalytics));
 
+router.get('/export/print-sessions', asyncHandler(adminController.exportPrintSessions));
+
+router.get('/notifications', asyncHandler(adminController.listNotifications));
+router.patch('/notifications/:id/read', asyncHandler(adminController.markNotificationRead));
+
 router.get('/users', asyncHandler(adminController.listUsers));
 router.patch('/users/:id', auditLog('update_user', 'user'), asyncHandler(adminController.updateUserStatus));
 router.delete('/users/:id', auditLog('delete_user', 'user'), asyncHandler(adminController.deleteUser));

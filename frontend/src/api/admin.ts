@@ -12,4 +12,7 @@ export const adminApi = {
   listUsers: (params?: Record<string, string>) => api.get('/admin/users', { params }),
   updateUser: (id: string, data: Record<string, unknown>) => api.patch(`/admin/users/${id}`, data),
   deleteUser: (id: string) => api.delete(`/admin/users/${id}`),
+  exportPrintSessions: (params?: Record<string, string>) => api.get('/admin/export/print-sessions', { params, responseType: 'blob' }),
+  listNotifications: (params?: Record<string, string>) => api.get('/admin/notifications', { params }),
+  markNotificationRead: (id: string) => api.patch(`/admin/notifications/${id}/read`),
 };

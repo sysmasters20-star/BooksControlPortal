@@ -77,4 +77,18 @@ export const schemas = {
     address: Joi.string().optional().allow(''),
     is_active: Joi.boolean().optional(),
   }),
+
+  forgotPassword: Joi.object({
+    email: Joi.string().email().required(),
+  }),
+
+  resetPassword: Joi.object({
+    token: Joi.string().required(),
+    password: Joi.string().min(8).max(100).required(),
+  }),
+
+  bulkUpdateStatus: Joi.object({
+    ids: Joi.array().items(Joi.string().uuid()).min(1).required(),
+    status: Joi.string().valid('pending', 'approved', 'rejected', 'archived').required(),
+  }),
 };

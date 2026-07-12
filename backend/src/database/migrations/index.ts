@@ -102,6 +102,24 @@ const migrations = [
 
   `ALTER TABLE books DROP COLUMN IF EXISTS bookshop_id`,
 
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(255)`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMPTZ`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token VARCHAR(255)`,
+
+  `CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    type VARCHAR(50) NOT NULL DEFAULT 'info',
+    is_read BOOLEAN DEFAULT false,
+    link VARCHAR(500),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read)`,
+
   `CREATE TABLE IF NOT EXISTS print_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id UUID REFERENCES print_sessions(id) ON DELETE CASCADE,

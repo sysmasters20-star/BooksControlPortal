@@ -257,3 +257,68 @@ export async function deleteUser(req: Request, res: Response) {
   }
   res.status(204).send();
 }
+
+export async function exportPrintSessions(req: Request, res: Response) {
+  const { bookshop_id, from, to } = req.query;
+
+  let sql = `SELECT ps.created_at, ps.copies, ps.session_token, b.title as book_title,
+                    bs.name as bookshop_name, u.name as user_name, u.email as user_email
+             FROM print_sessions ps
+             LEFT JOIN books b ON b.id = ps.book_id
+             LEFT JOIN bookshops bs ON bs.id = ps.bookshop_id
+             LEFT JOIN users u ON u.id = ps.user_id
+             WHERE 1=1`;
+  const params: unknown[] = [];
+  let paramIdx = 0;
+
+  if (bookshop_id) { paramIdx++; params.push(bookshop_id); sql += ` AND ps.bookshop_id = $${paramIdx}`; }
+  if (from) { paramIdx++; params.push(from); sql += ` AND ps.created_at >= $${paramIdx}`; }
+  if (to) { paramIdx++; params.push(to); sql += ` AND ps.created_at <= $${paramIdx}`; }
+
+  sql += ' ORDER BY ps.created_at DESC';
+
+  const result = await query(sql, params);
+  const rows = result.rows;
+
+  const header = 'Date,Book,Bookshop,Copies,User,Email,Session Token\n';
+  const csv = rows.map((r: Record<string, unknown>) =>
+    `"${r.created_at}","${r.book_title}","${r.bookshop_name}","${r.copies}","${r.user_name}","${r.user_email}","${r.session_token}"`,
+  ).join('\n');
+
+  res.set({
+    'Content-Type': 'text/csv',
+    'Content-Disposition': `attachment; filename="print-sessions-${new Date().toISOString().split('T')[0]}.csv"`,
+  });
+  res.send(header + csv);
+}
+
+export async function listNotifications(req: Request, res: Response) {
+  const { page: pageStr, limit: limitStr } = req.query;
+  const page = Math.max(1, parseInt(pageStr as string, 10) || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(limitStr as string, 10) || 20));
+  const offset = (page - 1) * limit;
+
+  const countResult = await query('SELECT COUNT(*)::int FROM notifications');
+  const total = parseInt(countResult.rows[0]?.count || '0');
+
+  const result = await query(
+    'SELECT * FROM notifications ORDER BY created_at DESC LIMIT $1 OFFSET $2',
+    [limit, offset],
+  );
+
+  res.json({ notifications: result.rows, total, page, limit, totalPages: Math.ceil(total / limit) });
+}
+
+export async function markNotificationRead(req: Request, res: Response) {
+  const { id } = req.params;
+  await query('UPDATE notifications SET is_read = true WHERE id = $1', [id]);
+  res.json({ message: 'Notification marked as read' });
+}
+
+export async function createNotification(data: { userId?: string; title: string; message: string; type?: string; link?: string }) {
+  await query(
+    `INSERT INTO notifications (user_id, title, message, type, link)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [data.userId || null, data.title, data.message, data.type || 'info', data.link || null],
+  );
+}

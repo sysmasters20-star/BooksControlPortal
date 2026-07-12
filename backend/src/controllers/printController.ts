@@ -240,6 +240,14 @@ export async function countPrint(req: Request, res: Response) {
     [result.rows[0].id, printToken, bookId, bookshopId, userId, tenMinutesFromNow],
   );
 
+  const { createNotification } = await import('./adminController.js');
+  await createNotification({
+    title: 'New Print Session',
+    message: `${copies} copy/copies of "${book.rows[0]?.title || bookId}" printed by ${req.user!.email || 'unknown'}`,
+    type: 'print',
+    link: `/admin/bookshops/${bookshopId}/analytics`,
+  });
+
   res.status(201).json({ session: result.rows[0], print_token: printToken, token_expires_at: tenMinutesFromNow });
 }
 

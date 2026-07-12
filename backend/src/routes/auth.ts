@@ -11,5 +11,8 @@ router.post('/register', validate(schemas.register), auditLog('register'), async
 router.post('/login', validate(schemas.login), asyncHandler(authController.login));
 router.post('/refresh', validate(schemas.refreshToken), asyncHandler(authController.refresh));
 router.get('/me', authenticate, asyncHandler(authController.me));
+router.post('/forgot-password', validate(schemas.forgotPassword), asyncHandler(authController.forgotPassword));
+router.post('/reset-password', validate(schemas.resetPassword), asyncHandler(authController.resetPassword));
+router.post('/verify-email', asyncHandler(authController.verifyEmail));
 
 export default router;

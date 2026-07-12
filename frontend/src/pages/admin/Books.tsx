@@ -20,6 +20,25 @@ export default function AdminBooks() {
   const [assignBookId, setAssignBookId] = useState('');
   const [assignShopId, setAssignShopId] = useState('');
   const [creating, setCreating] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === books.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(books.map((b) => b.id)));
+  };
+
+  const handleBulkStatus = async (status: string) => {
+    if (selectedIds.size === 0) return;
+    await booksApi.bulkUpdateStatus(Array.from(selectedIds), status);
+    setSelectedIds(new Set());
+    load();
+  };
 
   const load = () => booksApi.list().then(({ data }) => setBooks(data.books || []));
   useEffect(() => {
@@ -109,11 +128,23 @@ export default function AdminBooks() {
         </div>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="mb-3 flex items-center gap-2 px-4 py-2 bg-primary-50 rounded-lg border border-primary-200">
+          <span className="text-sm text-primary-700 font-medium">{selectedIds.size} selected</span>
+          <button onClick={() => handleBulkStatus('approved')} className="px-3 py-1 bg-emerald-600 text-white rounded text-xs font-medium hover:bg-emerald-700">Approve All</button>
+          <button onClick={() => handleBulkStatus('rejected')} className="px-3 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700">Reject All</button>
+          <button onClick={() => setSelectedIds(new Set())} className="px-3 py-1 border border-gray-300 text-gray-600 rounded text-xs font-medium hover:bg-gray-50">Clear</button>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-4 py-3 w-10">
+                  <input type="checkbox" checked={selectedIds.size === books.length && books.length > 0} onChange={toggleSelectAll} className="rounded border-gray-300" />
+                </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Title</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Author</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
@@ -124,6 +155,9 @@ export default function AdminBooks() {
             <tbody className="divide-y divide-gray-100">
               {books.map((book) => (
                 <tr key={book.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3">
+                    <input type="checkbox" checked={selectedIds.has(book.id)} onChange={() => toggleSelect(book.id)} className="rounded border-gray-300" />
+                  </td>
                   <td className="px-4 py-3">
                     <Link to={`/books/${book.id}`} className="text-sm font-medium text-primary-600 hover:text-primary-700">{book.title}</Link>
                   </td>
@@ -141,7 +175,7 @@ export default function AdminBooks() {
                 </tr>
               ))}
               {books.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-12 text-center text-gray-400 text-sm">No books found</td></tr>
+                <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400 text-sm">No books found</td></tr>
               )}
             </tbody>
           </table>

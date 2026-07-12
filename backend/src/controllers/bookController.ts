@@ -144,6 +144,29 @@ export async function updateStatus(req: Request, res: Response) {
   res.json({ book: result.rows[0] });
 }
 
+export async function bulkUpdateStatus(req: Request, res: Response) {
+  const { ids, status } = req.body;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new AppError(400, 'ids must be a non-empty array');
+  }
+
+  const allowedStatuses = ['pending', 'approved', 'rejected', 'archived'];
+  if (!allowedStatuses.includes(status)) {
+    throw new AppError(400, `Invalid status. Must be one of: ${allowedStatuses.join(', ')}`);
+  }
+
+  const placeholders = ids.map((_, i) => `$${i + 2}`).join(',');
+  const result = await query(
+    `UPDATE books SET status = $1, updated_at = NOW()
+     WHERE id IN (${placeholders})
+     RETURNING id, title, status`,
+    [status, ...ids],
+  );
+
+  res.json({ books: result.rows, updated: result.rowCount });
+}
+
 export async function uploadFile(req: Request, res: Response) {
   const { id } = req.params;
   if (!req.file) {

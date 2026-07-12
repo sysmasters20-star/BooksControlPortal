@@ -1,9 +1,11 @@
+import crypto from 'crypto';
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import type { SignOptions } from 'jsonwebtoken';
 import { query } from '../database/connection.js';
 import { env } from '../config/env.js';
+import { logger } from '../utils/logger.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { User } from '../types/index.js';
 
@@ -32,11 +34,12 @@ export async function register(req: Request, res: Response) {
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
+  const verificationToken = crypto.randomBytes(24).toString('hex');
   const result = await query(
-    `INSERT INTO users (email, password_hash, name, role)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO users (email, password_hash, name, role, verification_token)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING id, email, name, role, created_at`,
-    [email, passwordHash, name, 'bookshop_owner'],
+    [email, passwordHash, name, 'bookshop_owner', verificationToken],
   );
 
   const user = result.rows[0];
@@ -45,6 +48,7 @@ export async function register(req: Request, res: Response) {
 
   await query('UPDATE users SET refresh_token = $1 WHERE id = $2', [refreshToken, user.id]);
 
+  logger.info(`Verification token for ${email}: ${verificationToken}`);
   res.status(201).json({ user, accessToken, refreshToken });
 }
 
@@ -114,4 +118,64 @@ export async function me(req: Request, res: Response) {
   }
 
   res.json({ user: result.rows[0] });
+}
+
+export async function forgotPassword(req: Request, res: Response) {
+  const { email } = req.body;
+  const user = await query('SELECT id FROM users WHERE email = $1', [email]);
+  if (user.rows.length === 0) {
+    res.json({ message: 'If that email is registered, a reset link has been sent.' });
+    return;
+  }
+
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+  await query(
+    'UPDATE users SET reset_token = $1, reset_token_expires_at = $2 WHERE id = $3',
+    [resetToken, expiresAt, user.rows[0].id],
+  );
+
+  logger.info(`Password reset token for ${email}: ${resetToken}`);
+  res.json({ message: 'If that email is registered, a reset link has been sent.' });
+}
+
+export async function resetPassword(req: Request, res: Response) {
+  const { token, password } = req.body;
+
+  const user = await query(
+    'SELECT id FROM users WHERE reset_token = $1 AND reset_token_expires_at > NOW()',
+    [token],
+  );
+
+  if (user.rows.length === 0) {
+    throw new AppError(400, 'Invalid or expired reset token');
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  await query(
+    'UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires_at = NULL WHERE id = $2',
+    [passwordHash, user.rows[0].id],
+  );
+
+  res.json({ message: 'Password reset successfully' });
+}
+
+export async function verifyEmail(req: Request, res: Response) {
+  const { token } = req.body;
+
+  const user = await query(
+    'SELECT id FROM users WHERE verification_token = $1',
+    [token],
+  );
+
+  if (user.rows.length === 0) {
+    throw new AppError(400, 'Invalid verification token');
+  }
+
+  await query(
+    'UPDATE users SET is_verified = true, verification_token = NULL WHERE id = $1',
+    [user.rows[0].id],
+  );
+
+  res.json({ message: 'Email verified successfully' });
 }

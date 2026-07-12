@@ -60,6 +60,12 @@ export default function Login() {
             </button>
           </form>
 
+          <div className="flex items-center justify-between text-sm mt-2">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" className="rounded border-gray-300" /> Remember me
+            </label>
+            <Link to="/forgot-password" className="text-primary-600 hover:text-primary-700 font-medium">Forgot password?</Link>
+          </div>
           <p className="text-center text-sm text-gray-500 mt-6">
             Don't have an account? <Link to="/register" className="text-primary-600 hover:text-primary-700 font-medium">Register</Link>
           </p>
