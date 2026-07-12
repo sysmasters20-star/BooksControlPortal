@@ -11,12 +11,12 @@ export default function Dashboard() {
   const [stats, setStats] = useState({ total_books: 0, total_print_jobs: 0, total_sessions: 0, total_copies: 0 });
 
   useEffect(() => {
-    authApi.me().then(({ data }) => setUser(data.user));
-    booksApi.getStats().then(({ data }) => setStats(data.stats));
+    authApi.me().then(({ data }) => setUser(data.user)).catch(() => {});
+    booksApi.getStats().then(({ data }) => { if (data?.stats) setStats(data.stats); }).catch(() => {});
   }, []);
 
   const cards = [
-    { label: 'Total Books', value: stats.total_books, color: 'from-blue-500 to-blue-600' },
+    { label: 'Total Books', value: stats?.total_books ?? 0, color: 'from-blue-500 to-blue-600' },
     { label: 'Print Jobs', value: stats.total_print_jobs, color: 'from-amber-500 to-amber-600' },
     { label: 'Print Sessions', value: stats.total_sessions, color: 'from-emerald-500 to-emerald-600' },
     { label: 'Printed Copies', value: stats.total_copies, color: 'from-violet-500 to-violet-600' },

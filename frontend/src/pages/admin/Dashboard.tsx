@@ -23,7 +23,7 @@ export default function AdminDashboard() {
     const params: Record<string, string> = {};
     if (fromDate) params.from_date = fromDate;
     if (toDate) params.to_date = toDate;
-    adminApi.getStats(params).then(({ data }) => setStats(data.stats)).catch(() => {}).finally(() => setLoading(false));
+    adminApi.getStats(params).then(({ data }) => { if (data?.stats) setStats(data.stats); }).catch(() => {}).finally(() => setLoading(false));
   };
 
   useEffect(() => { loadStats(); }, []);
