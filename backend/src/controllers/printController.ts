@@ -316,7 +316,7 @@ export async function generatePrintPdf(req: Request, res: Response) {
 
   res.set({
     'Content-Type': 'application/pdf',
-    'Content-Disposition': `attachment; filename="${book.rows[0].title || 'book'}-print.pdf"`,
+    'Content-Disposition': 'inline',
     'Content-Length': resultPdf.length.toString(),
     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
     'Pragma': 'no-cache',

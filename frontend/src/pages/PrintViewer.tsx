@@ -152,21 +152,20 @@ export default function PrintViewer() {
       const pdfResponse = await printApi.generatePrintPdf(id, { sessionId, copies, printToken });
       const blob = new Blob([pdfResponse.data as BlobPart], { type: 'application/pdf' });
       const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = `${bookshopName || 'book'}-print-${sessionId}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-      setPrintMsg('Print file downloaded. Open it in your PDF viewer to print.');
+      const printWindow = window.open(blobUrl, '_blank');
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print();
+        };
+      }
+      setPrintMsg('Print dialog opened. Please select a physical printer.');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Print failed';
       setPrintMsg(msg);
     } finally {
       setPrinting(false);
     }
-  }, [id, copies, bookshopId, sessionId, bookshopName]);
+  }, [id, copies, bookshopId, sessionId]);
 
   const handleShopConfirm = () => {
     setShowShopDialog(false);
@@ -266,7 +265,8 @@ export default function PrintViewer() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={handleCancelPrint}>
           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-gray-900 mb-1">Confirm Print</h3>
-            <p className="text-sm text-gray-500 mb-4">This action will be recorded. Watermarks will appear on every page.</p>
+            <p className="text-sm text-gray-500 mb-2">This action will be recorded. Watermarks will appear on every page.</p>
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4 font-medium">Please select a physical printer. Saving as PDF is not permitted and is logged.</p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">Number of copies</label>
               <input type="number" min={1} max={1000} value={copies} onChange={(e) => setCopies(Math.max(1, Math.min(1000, Number(e.target.value))))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" autoFocus />
