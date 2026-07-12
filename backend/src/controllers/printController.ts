@@ -465,13 +465,21 @@ export async function logPrintSession(req: Request, res: Response) {
   }
 
   let bookshopId: string | null = null;
+  let bookshopName = '';
   if (role !== 'admin') {
-    const shopResult = await query('SELECT id FROM bookshops WHERE owner_id = $1', [userId]);
+    const shopResult = await query('SELECT id, name FROM bookshops WHERE owner_id = $1', [userId]);
     if (shopResult.rows.length > 0) {
       bookshopId = shopResult.rows[0].id;
+      bookshopName = shopResult.rows[0].name;
     }
   } else {
     bookshopId = (req.body.bookshop_id as string) || null;
+    if (bookshopId) {
+      const sr = await query('SELECT name FROM bookshops WHERE id = $1', [bookshopId]);
+      bookshopName = sr.rows[0]?.name || 'Administrator';
+    } else {
+      bookshopName = 'Administrator';
+    }
   }
 
   const sessionToken = crypto.randomBytes(16).toString('hex');
@@ -481,7 +489,7 @@ export async function logPrintSession(req: Request, res: Response) {
     [book_id, bookshopId, userId, copies, sessionToken],
   );
 
-  res.status(201).json({ session: result.rows[0] });
+  res.status(201).json({ session: result.rows[0], bookshop_name: bookshopName, bookshop_id: bookshopId });
 }
 
 export async function listSessions(req: Request, res: Response) {

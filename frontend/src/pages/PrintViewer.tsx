@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { booksApi } from '../api/books';
-import printJS from 'print-js';
 
 interface PageFile {
   id: string;
@@ -81,16 +80,55 @@ export default function SecureBookViewer() {
     setPrintMsg('');
     setShowPrintDialog(false);
     try {
-      await booksApi.logPrintSession({ book_id: id, copies });
-      setPrintMsg('Preparing print...');
+      const { data } = await booksApi.logPrintSession({ book_id: id, copies });
+      const bookshopName: string = data.bookshop_name || 'Unknown';
+      const bookshopId: string = data.bookshop_id || '';
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const watermarkText = `${bookshopName} - ID:${bookshopId} - ${dateStr} ${timeStr}`;
+
       const imageUrls = pages.map(p => getTokenUrl(p.id));
-      printJS({
-        printable: imageUrls,
-        type: 'image',
-        maxWidth: 800,
-        style: '@page { margin: 0; } img { width: 100%; page-break-after: always; }',
-        onError: () => { setPrintMsg('Print failed or cancelled'); },
-      } as any);
+
+      let bodyHtml = '<style>';
+      bodyHtml += '@page { margin: 0; size: A4; }';
+      bodyHtml += 'body { margin: 0; padding: 0; }';
+      bodyHtml += '.page-container { position: relative; width: 100%; height: 100vh; page-break-after: always; display: flex; justify-content: center; align-items: center; overflow: hidden; }';
+      bodyHtml += '.page-container:last-child { page-break-after: auto; }';
+      bodyHtml += '.forensic-watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 4rem; font-weight: bold; color: rgba(0, 0, 0, 0.15); pointer-events: none; user-select: none; z-index: 9999; white-space: nowrap; }';
+      bodyHtml += 'img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; }';
+      bodyHtml += '</style>';
+
+      for (const url of imageUrls) {
+        bodyHtml += '<div class="page-container">';
+        bodyHtml += `<img src="${url}" draggable="false" />`;
+        bodyHtml += `<div class="forensic-watermark">${watermarkText}</div>`;
+        bodyHtml += '</div>';
+      }
+
+      setPrintMsg('Preparing secure print...');
+
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'absolute';
+      iframe.style.top = '-9999px';
+      iframe.style.left = '-9999px';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = 'none';
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentDocument || iframe.contentWindow!.document;
+      doc.open();
+      doc.write(bodyHtml);
+      doc.close();
+
+      iframe.contentWindow!.focus();
+      iframe.contentWindow!.print();
+
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 2000);
+
       setPrintMsg('Print dialog opened. Please select a physical printer.');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Print failed';
@@ -179,7 +217,7 @@ export default function SecureBookViewer() {
           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-gray-900 mb-1">Confirm Print</h3>
             <p className="text-sm text-gray-500 mb-2">This action will be recorded for billing purposes.</p>
-            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4 font-medium">Please select a physical printer. Saving as PDF is not permitted.</p>
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4 font-medium">Please select a physical printer. Saving as PDF is not permitted and will embed your identity.</p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">Number of copies</label>
               <input type="number" min={1} max={1000} value={copies} onChange={(e) => setCopies(Math.max(1, Math.min(1000, Number(e.target.value))))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" autoFocus />
