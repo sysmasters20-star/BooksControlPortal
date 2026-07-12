@@ -28,6 +28,27 @@ async function fetchAsBase64(url: string): Promise<string> {
   });
 }
 
+const PRINT_BLOCKER_ID = 'print-blocker';
+const PRINT_FRAME_ID = 'print-frame';
+
+function injectPrintBlocker() {
+  const existing = document.getElementById(PRINT_BLOCKER_ID);
+  if (existing) existing.remove();
+  const style = document.createElement('style');
+  style.id = PRINT_BLOCKER_ID;
+  style.textContent = `@media print { html { display: none !important; } }`;
+  document.documentElement.appendChild(style);
+}
+
+function removePrintBlocker() {
+  document.getElementById(PRINT_BLOCKER_ID)?.remove();
+}
+
+function cleanupFrame(iframe: HTMLIFrameElement) {
+  if (document.body.contains(iframe)) document.body.removeChild(iframe);
+  removePrintBlocker();
+}
+
 export default function SecureBookViewer() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -124,10 +145,6 @@ export default function SecureBookViewer() {
 
       setPrintMsg('Preparing secure print...');
 
-      const iframe = document.createElement('iframe');
-      iframe.style.cssText = 'position:absolute;top:-9999px;left:-9999px;width:0;height:0;border:none;';
-      document.body.appendChild(iframe);
-
       let pagesHTML = '';
       for (let c = 0; c < safeCopies; c++) {
         for (const base64 of base64Images) {
@@ -153,7 +170,8 @@ export default function SecureBookViewer() {
 <style>
   @page { margin: 0; size: A4; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-  body { margin: 0; padding: 0; background: white; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: white !important; }
   .page-container {
     position: relative;
     width: 210mm;
@@ -214,25 +232,42 @@ export default function SecureBookViewer() {
 <body>${pagesHTML}</body>
 </html>`;
 
-      const doc = iframe.contentDocument || iframe.contentWindow!.document;
-      doc.open();
-      doc.write(fullHtml);
-      doc.close();
+      injectPrintBlocker();
+
+      const iframe = document.createElement('iframe');
+      iframe.id = PRINT_FRAME_ID;
+      iframe.style.cssText = 'position:absolute;top:-9999px;left:-9999px;width:1px;height:1px;border:none;';
+      iframe.srcdoc = fullHtml;
+      document.body.appendChild(iframe);
+
+      await new Promise<void>((resolve, reject) => {
+        iframe.onload = () => resolve();
+        iframe.onerror = () => reject(new Error('Print frame failed to load'));
+        setTimeout(() => resolve(), 15000);
+      });
 
       iframe.contentWindow!.focus();
-      iframe.contentWindow!.print();
+
+      try {
+        if (!iframe.contentWindow!.document.execCommand('print', false, undefined)) {
+          iframe.contentWindow!.print();
+        }
+      } catch {
+        iframe.contentWindow!.print();
+      }
+
       setIsProcessing(false);
+      setPrintMsg('Print dialog opened. Please select a physical printer (USB/WiFi/Bluetooth). Saving as PDF is monitored and watermarked.');
 
       iframe.contentWindow!.addEventListener('afterprint', () => {
-        if (document.body.contains(iframe)) document.body.removeChild(iframe);
+        cleanupFrame(iframe);
       });
       setTimeout(() => {
-        if (document.body.contains(iframe)) document.body.removeChild(iframe);
+        cleanupFrame(iframe);
       }, 15000);
-
-      setPrintMsg('Print dialog opened. Please select a physical printer.');
     } catch (err: unknown) {
       setIsProcessing(false);
+      removePrintBlocker();
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Print failed';
       setPrintMsg(msg);
     } finally {
@@ -329,7 +364,7 @@ export default function SecureBookViewer() {
           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-gray-900 mb-1">Confirm Print</h3>
             <p className="text-sm text-gray-500 mb-2">This action will be recorded for billing purposes.</p>
-            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4 font-medium">Please select a physical printer. Saving as PDF is not permitted and will embed your identity.</p>
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4 font-medium">WARNING: Please select a physical printer (USB/WiFi/Bluetooth). Saving as PDF is monitored and watermarked with your identity.</p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">Number of copies</label>
               <input type="number" min={1} max={10} value={copies} onChange={(e) => setCopies(Math.max(1, Math.min(10, Number(e.target.value))))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" autoFocus />
