@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { booksApi } from '../api/books';
 import printJS from 'print-js';
@@ -8,18 +8,21 @@ interface PageFile {
   page_number: number;
 }
 
+function getTokenUrl(fileId: string): string {
+  const token = localStorage.getItem('accessToken') || '';
+  return `/api/books/files/${fileId}?token=${encodeURIComponent(token)}`;
+}
+
 export default function SecureBookViewer() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pages, setPages] = useState<PageFile[]>([]);
-  const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const [showPrintDialog, setShowPrintDialog] = useState(false);
   const [copies, setCopies] = useState(1);
   const [printing, setPrinting] = useState(false);
   const [printMsg, setPrintMsg] = useState('');
-  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -52,29 +55,13 @@ export default function SecureBookViewer() {
     };
   }, []);
 
-  useEffect(() => {
-    return () => {
-      Object.values(imageUrls).forEach(url => URL.revokeObjectURL(url));
-    };
-  }, [imageUrls]);
-
   const loadPages = async () => {
     if (!id) return;
     setLoading(true);
     setError('');
     try {
       const { data } = await booksApi.listPageFiles(id);
-      const fileList: PageFile[] = data.files || [];
-      setPages(fileList);
-
-      const urls: Record<string, string> = {};
-      await Promise.all(fileList.map(async (pf) => {
-        try {
-          const resp = await booksApi.getFile(pf.id);
-          urls[pf.id] = URL.createObjectURL(resp.data as Blob);
-        } catch { }
-      }));
-      setImageUrls(urls);
+      setPages(data.files || []);
     } catch (err: unknown) {
       setError((err as { message?: string })?.message || 'Failed to load book');
     } finally {
@@ -96,14 +83,14 @@ export default function SecureBookViewer() {
     try {
       await booksApi.logPrintSession({ book_id: id, copies });
       setPrintMsg('Preparing print...');
-      const printableUrls = pages.map(p => imageUrls[p.id]).filter(Boolean);
+      const imageUrls = pages.map(p => getTokenUrl(p.id));
       printJS({
-        printable: printableUrls,
+        printable: imageUrls,
         type: 'image',
-        style: '@media print { img { page-break-after: always; } }',
-        header: `Book Print - ${copies} copy/copies`,
+        maxWidth: 800,
+        style: '@page { margin: 0; } img { width: 100%; page-break-after: always; }',
         onError: () => { setPrintMsg('Print failed or cancelled'); },
-      });
+      } as any);
       setPrintMsg('Print dialog opened. Please select a physical printer.');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Print failed';
@@ -111,15 +98,13 @@ export default function SecureBookViewer() {
     } finally {
       setPrinting(false);
     }
-  }, [id, pages, imageUrls, copies]);
+  }, [id, pages, copies]);
 
   const handleCancelPrint = () => setShowPrintDialog(false);
 
   return (
     <div
       className="flex flex-col h-[calc(100vh-8rem)]"
-      onContextMenu={(e) => e.preventDefault()}
-      onDragStart={(e) => e.preventDefault()}
       style={{ userSelect: 'none', WebkitUserSelect: 'none' } as React.CSSProperties}
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 print:hidden">
@@ -141,7 +126,7 @@ export default function SecureBookViewer() {
         </div>
       )}
 
-      <div ref={containerRef} className="flex-1 bg-gray-100 rounded-xl border border-gray-200 overflow-y-auto relative">
+      <div className="flex-1 bg-gray-100 rounded-xl border border-gray-200 overflow-y-auto relative">
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
             <div className="text-center">
@@ -163,20 +148,21 @@ export default function SecureBookViewer() {
           <div className="flex flex-col items-center gap-4 py-6 px-4">
             {pages.map((page) => (
               <div key={page.id} className="w-full max-w-[800px] relative">
-                {imageUrls[page.id] ? (
-                  <img
-                    src={imageUrls[page.id]}
-                    alt={`Page ${page.page_number}`}
-                    className="w-full max-w-[800px] shadow-xl rounded-lg"
-                    draggable={false}
-                    onDragStart={(e) => e.preventDefault()}
-                    style={{ pointerEvents: 'none', userSelect: 'none', WebkitUserDrag: 'none' } as React.CSSProperties}
-                  />
-                ) : (
-                  <div className="w-full aspect-[3/4] bg-gray-200 rounded-lg flex items-center justify-center">
-                    <p className="text-xs text-gray-400">Loading page {page.page_number}...</p>
-                  </div>
-                )}
+                <img
+                  src={getTokenUrl(page.id)}
+                  alt={`Page ${page.page_number}`}
+                  className="w-full max-w-[800px] shadow-xl rounded-lg"
+                  draggable="false"
+                  style={{ pointerEvents: 'none', userSelect: 'none', WebkitUserDrag: 'none' } as React.CSSProperties}
+                  onDragStart={(e) => e.preventDefault()}
+                  onContextMenu={(e) => e.preventDefault()}
+                />
+                <div
+                  className="absolute inset-0 z-10"
+                  onContextMenu={(e) => e.preventDefault()}
+                  onDragStart={(e) => e.preventDefault()}
+                  onMouseDown={(e) => e.preventDefault()}
+                />
               </div>
             ))}
           </div>
