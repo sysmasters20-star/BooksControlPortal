@@ -15,29 +15,8 @@ body {
   -ms-user-select: none;
 }
 
-.anti-capture iframe {
-  pointer-events: none;
-  border: none;
-}
-
-.anti-capture iframe:focus {
-  outline: none;
-}
-
-.anti-capture-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  background: transparent;
-  cursor: default;
-}
-
-.anti-capture-overlay * {
-  pointer-events: none !important;
-}
-
 @media print {
-  nav, header, button, .print\:hidden, .anti-capture, .anti-capture-overlay { display: none !important; }
+  nav, header, button, .print\:hidden, .anti-capture { display: none !important; }
   body::after {
     content: ' PRINTING NOT ALLOWED - This document is protected. Unauthorized printing is tracked.';
     display: flex;
@@ -52,11 +31,5 @@ body {
     text-align: center;
     padding: 2rem;
     z-index: 99999;
-  }
-}
-
-@media (max-width: 640px) {
-  .anti-capture iframe {
-    min-height: 100vh;
   }
 }
