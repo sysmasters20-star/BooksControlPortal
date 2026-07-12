@@ -22,6 +22,7 @@ const config: Knex.Config = {
       ? path.resolve(__dirname, '../database/migrations-knex')
       : './src/database/migrations-knex',
     extension: isProduction ? 'js' : 'ts',
+    loadExtensions: isProduction ? ['.js'] : ['.ts'],
     tableName: 'knex_migrations',
   },
   seeds: {
