@@ -160,6 +160,26 @@ export default function SecureBookViewer() {
       document.body.appendChild(iframe);
 
       const doc = iframe.contentDocument || iframe.contentWindow!.document;
+
+      iframe.onload = () => {
+        iframe.contentWindow!.focus();
+
+        setTimeout(() => {
+          try {
+            iframe.contentWindow!.print();
+          } catch (e) {
+            try {
+              (doc as any).execCommand('print', false, null);
+            } catch (e2) {
+              console.error('Print failed:', e2);
+              alert('Please use Ctrl+P to print manually');
+            }
+          }
+          setIsPrinting(false);
+          setPrintMsg('Print dialog opened. Please select a physical printer.');
+        }, 250);
+      };
+
       doc.open();
       doc.write(`<!DOCTYPE html>
 <html>
@@ -206,26 +226,6 @@ export default function SecureBookViewer() {
 <body>${pagesHTML}</body>
 </html>`);
       doc.close();
-
-      iframe.onload = () => {
-        iframe.contentWindow!.focus();
-
-        setTimeout(() => {
-          try {
-            iframe.contentWindow!.print();
-          } catch (e) {
-            try {
-              (doc as any).execCommand('print', false, null);
-            } catch (e2) {
-              console.error('Print failed:', e2);
-              alert('Please use Ctrl+P to print manually');
-            }
-          }
-        }, 250);
-      };
-
-      setIsPrinting(false);
-      setPrintMsg('');
 
       setTimeout(() => {
         if (document.body.contains(iframe)) {
