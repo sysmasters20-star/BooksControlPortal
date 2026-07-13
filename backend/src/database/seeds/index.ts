@@ -6,7 +6,7 @@ export async function runSeeds() {
   logger.info('Running database seeds...');
 
   const adminEmail = 'admin@bookprint.com';
-  const existingAdmin = await pool.query('SELECT id FROM users WHERE email = $1', [adminEmail]);
+  const existingAdmin = await pool.query('SELECT id, role FROM users WHERE email = $1', [adminEmail]);
 
   if (existingAdmin.rows.length === 0) {
     const passwordHash = await bcrypt.hash('Admin@123456', 12);
@@ -16,6 +16,9 @@ export async function runSeeds() {
       [adminEmail, passwordHash, 'System Admin', 'admin', true],
     );
     logger.info('Admin user created');
+  } else if (existingAdmin.rows[0].role !== 'admin') {
+    await pool.query('UPDATE users SET role = $1, is_verified = true WHERE email = $2', ['admin', adminEmail]);
+    logger.info('Admin user role fixed (was bookshop_owner, set to admin)');
   }
 
   const shopEmail = 'bookshop@demo.com';
