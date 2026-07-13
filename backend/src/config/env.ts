@@ -38,7 +38,7 @@ export const env = {
 
   rateLimit: {
     windowMinutes: parseInt(process.env.RATE_LIMIT_WINDOW || '15', 10),
-    maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
+    maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '500', 10),
   },
 
   redis: {
